@@ -15,8 +15,11 @@ describe("acp-next tool conversion", () => {
     expect(toToolKind("shell")).toBe("execute")
     expect(toToolKind("webfetch")).toBe("fetch")
     expect(toToolKind("edit")).toBe("edit")
+    expect(toToolKind("apply_patch")).toBe("edit")
     expect(toToolKind("patch")).toBe("edit")
     expect(toToolKind("write")).toBe("edit")
+    expect(toToolKind("write_patch")).toBe("edit")
+    expect(toToolKind("rg")).toBe("search")
     expect(toToolKind("grep")).toBe("search")
     expect(toToolKind("glob")).toBe("search")
     expect(toToolKind("repo_clone")).toBe("search")
@@ -31,6 +34,8 @@ describe("acp-next tool conversion", () => {
     expect(toLocations("read", { filePath: "/tmp/a.ts" })).toEqual([{ path: "/tmp/a.ts" }])
     expect(toLocations("edit", { filePath: "/tmp/b.ts" })).toEqual([{ path: "/tmp/b.ts" }])
     expect(toLocations("write", { filePath: "/tmp/c.ts" })).toEqual([{ path: "/tmp/c.ts" }])
+    expect(toLocations("write_patch", { path: "/tmp/d.ts" })).toEqual([{ path: "/tmp/d.ts" }])
+    expect(toLocations("rg", { path: "/repo/src" })).toEqual([{ path: "/repo/src" }])
     expect(toLocations("grep", { path: "/repo/src" })).toEqual([{ path: "/repo/src" }])
     expect(toLocations("glob", { path: "/repo/test" })).toEqual([{ path: "/repo/test" }])
     expect(toLocations("repo_clone", { path: "/repo" })).toEqual([{ path: "/repo" }])
@@ -99,6 +104,31 @@ describe("acp-next tool conversion", () => {
       {
         type: "content",
         content: { type: "text", text: "wrote /tmp/file.ts" },
+      },
+    ])
+  })
+
+  test("builds write_patch diffs from compact field names", () => {
+    expect(
+      completedToolContent("write_patch", {
+        status: "completed",
+        input: {
+          path: "/tmp/file.ts",
+          old: "before",
+          new: "after",
+        },
+        output: "patched /tmp/file.ts",
+      }),
+    ).toEqual([
+      {
+        type: "content",
+        content: { type: "text", text: "patched /tmp/file.ts" },
+      },
+      {
+        type: "diff",
+        path: "/tmp/file.ts",
+        oldText: "before",
+        newText: "after",
       },
     ])
   })

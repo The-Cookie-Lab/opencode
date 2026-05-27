@@ -299,6 +299,57 @@ exports[`tool parameters JSON Schema (wire shape) read 1`] = `
 }
 `;
 
+exports[`tool parameters JSON Schema (wire shape) rg 1`] = `
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "properties": {
+    "glob": {
+      "description": "content file filter",
+      "type": "string",
+    },
+    "hidden": {
+      "description": "include dotfiles; default true",
+      "type": "boolean",
+    },
+    "ignoreCase": {
+      "description": "case-insensitive match",
+      "type": "boolean",
+    },
+    "literal": {
+      "description": "treat pattern literally",
+      "type": "boolean",
+    },
+    "max": {
+      "description": "max rows; default 100",
+      "exclusiveMinimum": 0,
+      "maximum": 9007199254740991,
+      "minimum": -9007199254740991,
+      "type": "integer",
+    },
+    "mode": {
+      "description": "content|files; default content",
+      "enum": [
+        "content",
+        "files",
+      ],
+      "type": "string",
+    },
+    "path": {
+      "description": "search root/file; default cwd",
+      "type": "string",
+    },
+    "pattern": {
+      "description": "regex or glob",
+      "type": "string",
+    },
+  },
+  "required": [
+    "pattern",
+  ],
+  "type": "object",
+}
+`;
+
 exports[`tool parameters JSON Schema (wire shape) skill 1`] = `
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -485,6 +536,39 @@ exports[`tool parameters JSON Schema (wire shape) write 1`] = `
   "required": [
     "content",
     "filePath",
+  ],
+  "type": "object",
+}
+`;
+
+exports[`tool parameters JSON Schema (wire shape) write_patch 1`] = `
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "properties": {
+    "count": {
+      "description": "expected replacements; default 1",
+      "exclusiveMinimum": 0,
+      "maximum": 9007199254740991,
+      "minimum": -9007199254740991,
+      "type": "integer",
+    },
+    "new": {
+      "description": "replacement text",
+      "type": "string",
+    },
+    "old": {
+      "description": "exact text; empty creates/overwrites",
+      "type": "string",
+    },
+    "path": {
+      "description": "file path",
+      "type": "string",
+    },
+  },
+  "required": [
+    "path",
+    "old",
+    "new",
   ],
   "type": "object",
 }

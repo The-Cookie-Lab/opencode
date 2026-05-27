@@ -18,6 +18,7 @@ import { Parameters as Lsp } from "../../src/tool/lsp"
 import { Parameters as Plan } from "../../src/tool/plan"
 import { Parameters as Question } from "../../src/tool/question"
 import { Parameters as Read } from "../../src/tool/read"
+import { Parameters as Rg } from "../../src/tool/rg"
 import { Parameters as Shell } from "../../src/tool/shell"
 import { Parameters as Skill } from "../../src/tool/skill"
 import { Parameters as Task } from "../../src/tool/task"
@@ -25,6 +26,7 @@ import { Parameters as Todo } from "../../src/tool/todo"
 import { Parameters as WebFetch } from "../../src/tool/webfetch"
 import { Parameters as WebSearch } from "../../src/tool/websearch"
 import { Parameters as Write } from "../../src/tool/write"
+import { Parameters as WritePatch } from "../../src/tool/write_patch"
 
 const parse = <S extends Schema.Decoder<unknown>>(schema: S, input: unknown): S["Type"] =>
   Schema.decodeUnknownSync(schema)(input)
@@ -46,12 +48,14 @@ describe("tool parameters", () => {
     test("plan", () => expect(toJsonSchema(Plan)).toMatchSnapshot())
     test("question", () => expect(toJsonSchema(Question)).toMatchSnapshot())
     test("read", () => expect(toJsonSchema(Read)).toMatchSnapshot())
+    test("rg", () => expect(toJsonSchema(Rg)).toMatchSnapshot())
     test("skill", () => expect(toJsonSchema(Skill)).toMatchSnapshot())
     test("task", () => expect(toJsonSchema(Task)).toMatchSnapshot())
     test("todo", () => expect(toJsonSchema(Todo)).toMatchSnapshot())
     test("webfetch", () => expect(toJsonSchema(WebFetch)).toMatchSnapshot())
     test("websearch", () => expect(toJsonSchema(WebSearch)).toMatchSnapshot())
     test("write", () => expect(toJsonSchema(Write)).toMatchSnapshot())
+    test("write_patch", () => expect(toJsonSchema(WritePatch)).toMatchSnapshot())
 
     test("inlines named child schemas for provider compatibility", () => {
       const schema = toJsonSchema(Question)
@@ -221,6 +225,32 @@ describe("tool parameters", () => {
     })
   })
 
+  describe("rg", () => {
+    test("accepts content search", () => {
+      expect(parse(Rg, { pattern: "TODO", path: "/tmp", glob: "*.ts" })).toEqual({
+        pattern: "TODO",
+        path: "/tmp",
+        glob: "*.ts",
+      })
+    })
+    test("accepts files mode and search options", () => {
+      const parsed = parse(Rg, {
+        pattern: "**/*.ts",
+        mode: "files",
+        literal: true,
+        ignoreCase: true,
+        hidden: false,
+        max: 10,
+      })
+      expect(parsed.mode).toBe("files")
+      expect(parsed.max).toBe(10)
+    })
+    test("rejects missing pattern and invalid mode", () => {
+      expect(accepts(Rg, {})).toBe(false)
+      expect(accepts(Rg, { pattern: "x", mode: "bad" })).toBe(false)
+    })
+  })
+
   describe("skill", () => {
     test("accepts name", () => {
       expect(parse(Skill, { name: "foo" }).name).toBe("foo")
@@ -274,6 +304,23 @@ describe("tool parameters", () => {
     })
     test("rejects missing filePath", () => {
       expect(accepts(Write, { content: "hi" })).toBe(false)
+    })
+  })
+
+  describe("write_patch", () => {
+    test("accepts exact replacement", () => {
+      expect(parse(WritePatch, { path: "/a", old: "before", new: "after" })).toEqual({
+        path: "/a",
+        old: "before",
+        new: "after",
+      })
+    })
+    test("accepts positive replacement count", () => {
+      expect(parse(WritePatch, { path: "/a", old: "x", new: "y", count: 2 }).count).toBe(2)
+    })
+    test("rejects missing fields and non-positive count", () => {
+      expect(accepts(WritePatch, { path: "/a", old: "x" })).toBe(false)
+      expect(accepts(WritePatch, { path: "/a", old: "x", new: "y", count: 0 })).toBe(false)
     })
   })
 })

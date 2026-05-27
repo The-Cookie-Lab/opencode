@@ -46,10 +46,13 @@ export function toToolKind(toolName: string): ToolKind {
       return "fetch"
 
     case "edit":
+    case "apply_patch":
     case "patch":
     case "write":
+    case "write_patch":
       return "edit"
 
+    case "rg":
     case "grep":
     case "glob":
     case "repo_clone":
@@ -76,6 +79,10 @@ export function toLocations(toolName: string, input: ToolInput): ToolCallLocatio
     case "write":
       return locationFrom(input.filePath)
 
+    case "write_patch":
+      return locationFrom(input.path)
+
+    case "rg":
     case "grep":
     case "glob":
     case "repo_clone":
@@ -261,14 +268,14 @@ function locationFrom(value: unknown): ToolCallLocation[] {
 }
 
 function diffContent(input: ToolInput): ToolCallContent[] {
-  const oldText = stringValue(input.oldString)
-  const newText = stringValue(input.newString) ?? stringValue(input.content)
+  const oldText = stringValue(input.oldString) ?? stringValue(input.old)
+  const newText = stringValue(input.newString) ?? stringValue(input.new) ?? stringValue(input.content)
   if (oldText === undefined || newText === undefined) return []
 
   return [
     {
       type: "diff",
-      path: stringValue(input.filePath) ?? "",
+      path: stringValue(input.filePath) ?? stringValue(input.path) ?? "",
       oldText,
       newText,
     },

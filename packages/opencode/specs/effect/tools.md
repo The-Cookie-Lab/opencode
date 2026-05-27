@@ -24,6 +24,16 @@ So the remaining work is no longer "convert tools to Effect at all". The remaini
 
 That means a tool does not need a separate `Tool.defineEffect(...)` helper to count as migrated. A tool is effectively migrated when its init and execute path stay Effect-native, even if some internals still bridge to Promise-based or raw APIs.
 
+## Experimental compact core
+
+`OPENCODE_EXPERIMENTAL_COMPACT_TOOLS=true` switches the built-in prompt surface to a smaller, enhanced core without changing the default tool set.
+
+The compact surface keeps `bash`, `read`, support tools such as `task`, `skill`, `todowrite`, web tools, and optional gated tools. It replaces `glob` plus `grep` with `rg`, and replaces `edit`, `write`, and model-specific `apply_patch` with `write_patch`.
+
+- `rg` uses the shared ripgrep service for both content search and file-name matching.
+- `write_patch` uses Desktop Commander-style exact search/replace semantics: line-ending normalization, an expected replacement count, all-or-nothing mutation, and nearest-match feedback when exact text is missing.
+- Built-in tool descriptions become compact imperative strings and their JSON Schema metadata drops prose fields. Custom and plugin tools are left unchanged.
+
 ## Tests
 
 Tool tests should use the existing Effect helpers in `packages/opencode/test/lib/effect.ts`:
@@ -48,12 +58,14 @@ These exported tool definitions currently use `Tool.define(...)` in `src/tool`:
 - [x] `plan.ts`
 - [x] `question.ts`
 - [x] `read.ts`
+- [x] `rg.ts`
 - [x] `skill.ts`
 - [x] `task.ts`
 - [x] `todo.ts`
 - [x] `webfetch.ts`
 - [x] `websearch.ts`
 - [x] `write.ts`
+- [x] `write_patch.ts`
 
 Notes:
 

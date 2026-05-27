@@ -29,6 +29,8 @@ import * as Log from "@opencode-ai/core/util/log"
 import { LspTool } from "./lsp"
 import * as Truncate from "./truncate"
 import { ApplyPatchTool } from "./apply_patch"
+import { RgTool } from "./rg"
+import { WritePatchTool } from "./write_patch"
 import { Glob } from "@opencode-ai/core/util/glob"
 import path from "path"
 import { pathToFileURL } from "url"
@@ -53,8 +55,27 @@ import { Permission } from "@/permission"
 import { Reference } from "@/reference/reference"
 import { BackgroundJob } from "@/background/job"
 import { RuntimeFlags } from "@/effect/runtime-flags"
+import { ToolJsonSchema } from "./json-schema"
 
 const log = Log.create({ service: "tool.registry" })
+const compactDescriptions = {
+  [InvalidTool.id]: "never call.",
+  [QuestionTool.id]: "ask user; concise choices; only when blocked.",
+  [ShellTool.id]: "exec shell. use for tests/build/git/processes. args: command,description,timeout?,workdir?.",
+  [ReadTool.id]: "read file/dir. args: filePath,offset?,limit?. returns numbered lines/attachments.",
+  [RgTool.id]:
+    "search/list via ripgrep. args: pattern,path?,mode=content|files,glob?,literal?,ignoreCase?,hidden?,max?.",
+  [WritePatchTool.id]: "edit exact. args: path,old,new,count?. old='' create/overwrite. fail unless count matches.",
+  [TaskTool.id]: "delegate subagent. args: description,prompt,subagent_type,background?.",
+  [WebFetchTool.id]: "fetch URL. args: url,format?,timeout?.",
+  [TodoWriteTool.id]: "replace todos. args: todos[]. keep statuses current.",
+  [WebSearchTool.id]: "web search. args: query,numResults?,livecrawl?,type?,contextMaxCharacters?.",
+  [RepoCloneTool.id]: "clone/cache reference repo. args: repository,refresh?,branch?.",
+  [RepoOverviewTool.id]: "summarize repo tree. args: repository?,path?,depth?.",
+  [SkillTool.id]: "load matched skill. args: name.",
+  [LspTool.id]: "semantic code intel. args: operation,filePath,line?,character?,query?.",
+  [PlanExitTool.id]: "exit plan mode after complete plan.",
+} satisfies Record<string, string>
 
 export function webSearchEnabled(providerID: ProviderID, flags = { exa: false, parallel: false }) {
   return providerID === ProviderID.opencode || flags.exa || flags.parallel
@@ -131,6 +152,8 @@ export const layer: Layer.Layer<
     const edit = yield* EditTool
     const greptool = yield* GrepTool
     const patchtool = yield* ApplyPatchTool
+    const rgtool = yield* RgTool
+    const writepatch = yield* WritePatchTool
     const skilltool = yield* SkillTool
     const agent = yield* Agent.Service
 
@@ -238,6 +261,8 @@ export const layer: Layer.Layer<
           repo_overview: Tool.init(repoOverview),
           skill: Tool.init(skilltool),
           patch: Tool.init(patchtool),
+          rg: Tool.init(rgtool),
+          write_patch: Tool.init(writepatch),
           question: Tool.init(question),
           lsp: Tool.init(lsptool),
           plan: Tool.init(plan),
@@ -245,25 +270,42 @@ export const layer: Layer.Layer<
 
         return {
           custom,
-          builtin: [
-            tool.invalid,
-            ...(questionEnabled ? [tool.question] : []),
-            tool.shell,
-            tool.read,
-            tool.glob,
-            tool.grep,
-            tool.edit,
-            tool.write,
-            tool.task,
-            tool.fetch,
-            tool.todo,
-            tool.search,
-            ...(flags.experimentalScout ? [tool.repo_clone, tool.repo_overview] : []),
-            tool.skill,
-            tool.patch,
-            ...(flags.experimentalLspTool ? [tool.lsp] : []),
-            ...(flags.experimentalPlanMode && flags.client === "cli" ? [tool.plan] : []),
-          ],
+          builtin: flags.experimentalCompactTools
+            ? [
+                tool.invalid,
+                ...(questionEnabled ? [tool.question] : []),
+                tool.shell,
+                tool.read,
+                tool.rg,
+                tool.write_patch,
+                tool.task,
+                tool.fetch,
+                tool.todo,
+                tool.search,
+                ...(flags.experimentalScout ? [tool.repo_clone, tool.repo_overview] : []),
+                tool.skill,
+                ...(flags.experimentalLspTool ? [tool.lsp] : []),
+                ...(flags.experimentalPlanMode && flags.client === "cli" ? [tool.plan] : []),
+              ]
+            : [
+                tool.invalid,
+                ...(questionEnabled ? [tool.question] : []),
+                tool.shell,
+                tool.read,
+                tool.glob,
+                tool.grep,
+                tool.edit,
+                tool.write,
+                tool.task,
+                tool.fetch,
+                tool.todo,
+                tool.search,
+                ...(flags.experimentalScout ? [tool.repo_clone, tool.repo_overview] : []),
+                tool.skill,
+                tool.patch,
+                ...(flags.experimentalLspTool ? [tool.lsp] : []),
+                ...(flags.experimentalPlanMode && flags.client === "cli" ? [tool.plan] : []),
+              ],
           task: tool.task,
           read: tool.read,
         }
@@ -282,6 +324,7 @@ export const layer: Layer.Layer<
     const describeSkill = Effect.fn("ToolRegistry.describeSkill")(function* (agent: Agent.Info) {
       const list = yield* skill.available(agent)
       if (list.length === 0) return "No skills are currently available."
+      if (flags.experimentalCompactTools) return `skills: ${Skill.fmt(list, { verbose: false }).replaceAll("\n", "; ")}`
       return [
         "Load a specialized skill that provides domain-specific instructions and workflows.",
         "",
@@ -310,11 +353,16 @@ export const layer: Layer.Layer<
             `- ${item.name}: ${item.description ?? "This subagent should only be called manually by the user."}`,
         )
         .join("\n")
+      if (flags.experimentalCompactTools) {
+        return `agents: ${list.map((item) => `${item.name}=${item.description ?? "manual-only"}`).join("; ")}`
+      }
       return ["Available agent types and the tools they have access to:", description].join("\n")
     })
 
     const tools: Interface["tools"] = Effect.fn("ToolRegistry.tools")(function* (input) {
-      const filtered = (yield* all()).filter((tool) => {
+      const s = yield* InstanceState.get(state)
+      const builtins = new Set<Tool.Def>(s.builtin)
+      const filtered = ([...s.builtin, ...s.custom] as Tool.Def[]).filter((tool) => {
         if (tool.id === WebSearchTool.id) {
           return webSearchEnabled(input.providerID, { exa: flags.enableExa, parallel: flags.enableParallel })
         }
@@ -341,17 +389,20 @@ export const layer: Layer.Layer<
             output.parameters === tool.parameters || output.jsonSchema !== tool.jsonSchema
               ? output.jsonSchema
               : undefined
+          const compact = flags.experimentalCompactTools && builtins.has(tool)
           return {
             id: tool.id,
             description: [
-              output.description,
+              compactDescriptions[tool.id] ?? output.description,
               tool.id === TaskTool.id ? yield* describeTask(input.agent) : undefined,
               tool.id === SkillTool.id ? yield* describeSkill(input.agent) : undefined,
             ]
               .filter(Boolean)
               .join("\n"),
             parameters: output.parameters,
-            jsonSchema,
+            jsonSchema: compact
+              ? compactJsonSchema(jsonSchema ?? ToolJsonSchema.fromSchema(output.parameters as Schema.Top))
+              : jsonSchema,
             execute: tool.execute,
             formatValidationError: tool.formatValidationError,
           }
@@ -398,6 +449,21 @@ export const defaultLayer = Layer.suspend(() =>
 
 function isZodType(value: unknown): value is z.ZodType {
   return typeof value === "object" && value !== null && "_zod" in value
+}
+
+function compactJsonSchema(value: JSONSchema7): JSONSchema7 {
+  if (typeof value === "boolean") return value
+  return stripSchema(value) as JSONSchema7
+}
+
+function stripSchema(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map((item) => stripSchema(item))
+  if (typeof value !== "object" || value === null) return value
+  return Object.fromEntries(
+    Object.entries(value)
+      .filter(([key]) => key !== "$schema" && key !== "description" && key !== "title")
+      .map(([key, item]) => [key, stripSchema(item)]),
+  )
 }
 
 function isPluginTool(value: unknown): value is ToolDefinition {

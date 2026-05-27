@@ -3,6 +3,7 @@ import path from "path"
 import fs from "fs/promises"
 import { fileURLToPath, pathToFileURL } from "url"
 import { Effect, Layer, Result, Schema } from "effect"
+import { z } from "zod"
 import { CrossSpawnSpawner } from "@opencode-ai/core/cross-spawn-spawner"
 import { ToolRegistry } from "@/tool/registry"
 import { Tool } from "@/tool/tool"
@@ -99,8 +100,40 @@ const it = testEffect(Layer.mergeAll(registryLayer(), node, Agent.defaultLayer))
 const scout = testEffect(
   Layer.mergeAll(registryLayer({ flags: { experimentalScout: true } }), node, Agent.defaultLayer),
 )
+const compact = testEffect(
+  Layer.mergeAll(registryLayer({ flags: { experimentalCompactTools: true } }), node, Agent.defaultLayer),
+)
 const withBrokenPlugin = testEffect(
   Layer.mergeAll(registryLayer({ plugin: brokenPluginLayer }), node, Agent.defaultLayer),
+)
+
+const describedPluginLayer = Layer.succeed(
+  Plugin.Service,
+  Plugin.Service.of({
+    init: () => Effect.void,
+    trigger: ((_name: unknown, _input: unknown, output: unknown) =>
+      Effect.succeed(output)) as Plugin.Interface["trigger"],
+    list: () =>
+      Effect.succeed([
+        {
+          tool: {
+            described_plugin_tool: {
+              description: "custom verbose description",
+              args: { text: z.string().describe("custom text") },
+              execute: async () => "ok",
+            },
+          },
+        },
+      ]),
+  }),
+)
+
+const compactWithDescribedPlugin = testEffect(
+  Layer.mergeAll(
+    registryLayer({ flags: { experimentalCompactTools: true }, plugin: describedPluginLayer }),
+    node,
+    Agent.defaultLayer,
+  ),
 )
 
 afterEach(async () => {
@@ -134,6 +167,82 @@ describe("tool.registry", () => {
       const ids = yield* registry.ids()
 
       expect(ids).not.toContain("task_status")
+    }),
+  )
+
+  it.instance("keeps the legacy edit/search primitives by default", () =>
+    Effect.gen(function* () {
+      const registry = yield* ToolRegistry.Service
+      const ids = yield* registry.ids()
+
+      expect(ids).toContain("glob")
+      expect(ids).toContain("grep")
+      expect(ids).toContain("edit")
+      expect(ids).toContain("write")
+      expect(ids).toContain("apply_patch")
+      expect(ids).not.toContain("rg")
+      expect(ids).not.toContain("write_patch")
+    }),
+  )
+
+  compact.instance("exposes the compact enhanced core when enabled", () =>
+    Effect.gen(function* () {
+      const registry = yield* ToolRegistry.Service
+      const ids = yield* registry.ids()
+
+      expect(ids).toContain("bash")
+      expect(ids).toContain("read")
+      expect(ids).toContain("rg")
+      expect(ids).toContain("write_patch")
+      expect(ids).not.toContain("glob")
+      expect(ids).not.toContain("grep")
+      expect(ids).not.toContain("edit")
+      expect(ids).not.toContain("write")
+      expect(ids).not.toContain("apply_patch")
+    }),
+  )
+
+  compact.instance("strips built-in schema prose in compact mode", () =>
+    Effect.gen(function* () {
+      const registry = yield* ToolRegistry.Service
+      const agent = yield* Agent.Service
+      const tools = yield* registry.tools({
+        providerID: ProviderID.opencode,
+        modelID: ModelID.make("test"),
+        agent: yield* agent.defaultInfo(),
+      })
+      const rg = tools.find((tool) => tool.id === "rg")
+      const writePatch = tools.find((tool) => tool.id === "write_patch")
+
+      expect(rg?.description).toBe(
+        "search/list via ripgrep. args: pattern,path?,mode=content|files,glob?,literal?,ignoreCase?,hidden?,max?.",
+      )
+      expect(writePatch?.description).toBe(
+        "edit exact. args: path,old,new,count?. old='' create/overwrite. fail unless count matches.",
+      )
+      expect(JSON.stringify(rg?.jsonSchema)).not.toContain("description")
+      expect(JSON.stringify(writePatch?.jsonSchema)).not.toContain("description")
+    }),
+  )
+
+  compactWithDescribedPlugin.instance("does not compact custom plugin tools", () =>
+    Effect.gen(function* () {
+      const registry = yield* ToolRegistry.Service
+      const agent = yield* Agent.Service
+      const tools = yield* registry.tools({
+        providerID: ProviderID.opencode,
+        modelID: ModelID.make("test"),
+        agent: yield* agent.defaultInfo(),
+      })
+      const custom = tools.find((tool) => tool.id === "described_plugin_tool")
+      if (!custom) throw new Error("described plugin tool was not loaded")
+
+      expect(custom.description).toBe("custom verbose description")
+      expect(ToolJsonSchema.fromTool(custom)).toMatchObject({
+        properties: {
+          text: { description: "custom text" },
+        },
+      })
     }),
   )
 
