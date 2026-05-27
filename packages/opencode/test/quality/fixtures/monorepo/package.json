@@ -1,0 +1,6 @@
+{
+  "workspaces": ["packages/*"],
+  "scripts": {
+    "build": "bun run --filter '*' build"
+  }
+}

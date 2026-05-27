@@ -112,6 +112,34 @@ This is used internally and can be invoked using `@general` in messages.
 
 Learn more about [agents](https://opencode.ai/docs/agents).
 
+### Experimental Macro Tools
+
+Set `OPENCODE_EXPERIMENTAL_MACRO_TOOLS=1` to add the opt-in context-discovery
+macro tools without removing legacy primitives. The macro surface currently
+adds:
+
+- `project_dossier` for a compact current-repo summary.
+- `view_outline` for body-free source structure through LSP first, then the
+  CookieLayer/OpenViking AST adapter when available.
+- `semantic_search` for ranked conceptual code hits with a cold lexical
+  fallback while a local code index warms.
+
+Narrow rollout gates are also available:
+`OPENCODE_EXPERIMENTAL_CONTEXT_TOOLS=1` enables only `project_dossier` and
+`view_outline`; `OPENCODE_EXPERIMENTAL_SEMANTIC_SEARCH=1` enables only
+`semantic_search`.
+
+Macro-tool changes are guarded by the blocking quality runner:
+
+```bash
+cd packages/opencode
+bun run macro-quality -- --changed-from origin/dev --mode local
+```
+
+The runner classifies changed macro-tool files, selects required gates, checks
+the versioned scenario manifest in `test/quality/macro-scenarios.json`, and
+writes `.artifacts/macro-quality/report.json` plus a Markdown summary.
+
 ### Documentation
 
 For more info on how to configure OpenCode, [**head over to our docs**](https://opencode.ai/docs).

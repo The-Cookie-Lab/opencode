@@ -54,6 +54,9 @@ describe("RuntimeFlags", () => {
       expect(flags.enableExperimentalModels).toBe(true)
       expect(flags.enableQuestionTool).toBe(true)
       expect(flags.experimentalScout).toBe(true)
+      expect(flags.experimentalMacroTools).toBe(true)
+      expect(flags.experimentalContextTools).toBe(true)
+      expect(flags.experimentalSemanticSearch).toBe(true)
       expect(flags.experimentalBackgroundSubagents).toBe(true)
       expect(flags.experimentalLspTy).toBe(false)
       expect(flags.experimentalLspTool).toBe(true)
@@ -109,6 +112,9 @@ describe("RuntimeFlags", () => {
       expect(flags.disableClaudeCodeSkills).toBe(false)
       expect(flags.enableExa).toBe(false)
       expect(flags.experimentalIconDiscovery).toBe(false)
+      expect(flags.experimentalMacroTools).toBe(false)
+      expect(flags.experimentalContextTools).toBe(false)
+      expect(flags.experimentalSemanticSearch).toBe(false)
       expect(flags.experimentalOxfmt).toBe(false)
       expect(flags.outputTokenMax).toBeUndefined()
       expect(flags.bashDefaultTimeoutMs).toBe(1_000)
@@ -227,6 +233,58 @@ describe("RuntimeFlags", () => {
       expect(flags.experimentalIconDiscovery).toBe(false)
     }),
   )
+
+  for (const input of [
+    {
+      name: "macro tools",
+      flag: "experimentalMacroTools" as const,
+      env: "OPENCODE_EXPERIMENTAL_MACRO_TOOLS",
+    },
+    {
+      name: "context tools",
+      flag: "experimentalContextTools" as const,
+      env: "OPENCODE_EXPERIMENTAL_CONTEXT_TOOLS",
+    },
+    {
+      name: "semantic search",
+      flag: "experimentalSemanticSearch" as const,
+      env: "OPENCODE_EXPERIMENTAL_SEMANTIC_SEARCH",
+    },
+  ]) {
+    it.effect(`${input.name} defaults to false`, () =>
+      Effect.gen(function* () {
+        const flags = yield* readFlags.pipe(Effect.provide(fromConfig({})))
+
+        expect(flags[input.flag]).toBe(false)
+      }),
+    )
+
+    it.effect(`${input.name} reads its dedicated flag`, () =>
+      Effect.gen(function* () {
+        const flags = yield* readFlags.pipe(Effect.provide(fromConfig({ [input.env]: "true" })))
+
+        expect(flags[input.flag]).toBe(true)
+      }),
+    )
+
+    it.effect(`${input.name} inherits OPENCODE_EXPERIMENTAL`, () =>
+      Effect.gen(function* () {
+        const flags = yield* readFlags.pipe(Effect.provide(fromConfig({ OPENCODE_EXPERIMENTAL: "true" })))
+
+        expect(flags[input.flag]).toBe(true)
+      }),
+    )
+
+    it.effect(`${input.name} dedicated false overrides OPENCODE_EXPERIMENTAL`, () =>
+      Effect.gen(function* () {
+        const flags = yield* readFlags.pipe(
+          Effect.provide(fromConfig({ OPENCODE_EXPERIMENTAL: "true", [input.env]: "false" })),
+        )
+
+        expect(flags[input.flag]).toBe(false)
+      }),
+    )
+  }
 
   it.effect("experimentalOxfmt defaults to false", () =>
     Effect.gen(function* () {

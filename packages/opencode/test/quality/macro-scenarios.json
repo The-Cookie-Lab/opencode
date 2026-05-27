@@ -1,0 +1,221 @@
+{
+  "version": 1,
+  "scenarios": [
+    {
+      "id": "project-dossier-node",
+      "fixture": "fixtures/node-repo",
+      "flags": ["OPENCODE_EXPERIMENTAL_MACRO_TOOLS"],
+      "requiredTools": ["project_dossier"],
+      "forbiddenTools": ["read"],
+      "assertions": ["output.includes('Stack: Node.js')", "metadata.package_manager == 'bun'", "output_tokens <= 250"],
+      "budgets": { "output_tokens": 250, "latency_ms": 1000 }
+    },
+    {
+      "id": "project-dossier-python",
+      "fixture": "fixtures/python-repo",
+      "flags": ["OPENCODE_EXPERIMENTAL_MACRO_TOOLS"],
+      "requiredTools": ["project_dossier"],
+      "forbiddenTools": ["read"],
+      "assertions": ["output.includes('Stack: Python')", "metadata.dependency_files includes pyproject.toml"],
+      "budgets": { "output_tokens": 250, "latency_ms": 1000 }
+    },
+    {
+      "id": "project-dossier-java",
+      "fixture": "fixtures/java-repo",
+      "flags": ["OPENCODE_EXPERIMENTAL_MACRO_TOOLS"],
+      "requiredTools": ["project_dossier"],
+      "forbiddenTools": ["read"],
+      "assertions": ["output.includes('Java/Kotlin')", "metadata.dependency_files includes pom.xml"],
+      "budgets": { "output_tokens": 250, "latency_ms": 1000 }
+    },
+    {
+      "id": "project-dossier-empty",
+      "fixture": "fixtures/empty-repo",
+      "flags": ["OPENCODE_EXPERIMENTAL_MACRO_TOOLS"],
+      "requiredTools": ["project_dossier"],
+      "forbiddenTools": ["read"],
+      "assertions": ["output.includes('Stack: unknown')", "metadata.truncated == false"],
+      "budgets": { "output_tokens": 250, "latency_ms": 1000 }
+    },
+    {
+      "id": "project-dossier-no-git",
+      "fixture": "fixtures/node-repo",
+      "flags": ["OPENCODE_EXPERIMENTAL_CONTEXT_TOOLS"],
+      "requiredTools": ["project_dossier"],
+      "forbiddenTools": ["read"],
+      "assertions": ["metadata.cwd is present", "git metadata may be absent without failure"],
+      "budgets": { "output_tokens": 250, "latency_ms": 1000 }
+    },
+    {
+      "id": "project-dossier-monorepo",
+      "fixture": "fixtures/monorepo",
+      "flags": ["OPENCODE_EXPERIMENTAL_CONTEXT_TOOLS"],
+      "requiredTools": ["project_dossier"],
+      "forbiddenTools": ["read"],
+      "assertions": ["output includes package manager", "top level is bounded"],
+      "budgets": { "output_tokens": 250, "latency_ms": 1200 }
+    },
+    {
+      "id": "view-outline-lsp-success",
+      "fixture": "fixtures/node-repo/src/service.ts",
+      "flags": ["OPENCODE_EXPERIMENTAL_CONTEXT_TOOLS"],
+      "requiredTools": ["view_outline"],
+      "forbiddenTools": ["read"],
+      "assertions": ["metadata.source == 'lsp'", "rows are line kind name(signature)"],
+      "budgets": { "output_tokens": 180, "latency_ms": 1000, "max_symbols": 120 }
+    },
+    {
+      "id": "view-outline-lsp-fallback",
+      "fixture": "fixtures/node-repo/src/service.ts",
+      "flags": ["OPENCODE_EXPERIMENTAL_CONTEXT_TOOLS"],
+      "requiredTools": ["view_outline"],
+      "forbiddenTools": ["read"],
+      "assertions": ["metadata.source in cookielayer_ast,text", "output excludes method bodies"],
+      "budgets": { "output_tokens": 180, "latency_ms": 1200, "max_symbols": 120 }
+    },
+    {
+      "id": "view-outline-cookielayer-success",
+      "fixture": "fixtures/python-repo/app.py",
+      "flags": ["OPENCODE_EXPERIMENTAL_CONTEXT_TOOLS"],
+      "requiredTools": ["view_outline"],
+      "forbiddenTools": ["read"],
+      "assertions": ["metadata.source == 'cookielayer_ast'", "adapter == openviking"],
+      "budgets": { "output_tokens": 180, "latency_ms": 2000, "max_symbols": 120 }
+    },
+    {
+      "id": "view-outline-cookielayer-unavailable",
+      "fixture": "fixtures/python-repo/app.py",
+      "flags": ["OPENCODE_EXPERIMENTAL_CONTEXT_TOOLS"],
+      "requiredTools": ["view_outline"],
+      "forbiddenTools": ["read"],
+      "assertions": ["metadata.source == 'text'", "output still contains class/function rows"],
+      "budgets": { "output_tokens": 180, "latency_ms": 1000, "max_symbols": 120 }
+    },
+    {
+      "id": "view-outline-large-file-truncation",
+      "fixture": "fixtures/large-repo/src/large.ts",
+      "flags": ["OPENCODE_EXPERIMENTAL_CONTEXT_TOOLS"],
+      "requiredTools": ["view_outline"],
+      "forbiddenTools": ["read"],
+      "assertions": ["metadata.truncated == true", "symbol_count <= maxSymbols"],
+      "budgets": { "output_tokens": 300, "latency_ms": 1500, "max_symbols": 25 }
+    },
+    {
+      "id": "view-outline-binary-file",
+      "fixture": "fixtures/binary-repo/blob.bin",
+      "flags": ["OPENCODE_EXPERIMENTAL_CONTEXT_TOOLS"],
+      "requiredTools": ["view_outline"],
+      "forbiddenTools": ["read"],
+      "assertions": ["returns controlled error metadata", "does not dump binary contents"],
+      "budgets": { "output_tokens": 80, "latency_ms": 1000 }
+    },
+    {
+      "id": "view-outline-symlink",
+      "fixture": "fixtures/symlink-repo/link.ts",
+      "flags": ["OPENCODE_EXPERIMENTAL_CONTEXT_TOOLS"],
+      "requiredTools": ["view_outline"],
+      "forbiddenTools": ["read"],
+      "assertions": ["external-directory guard is enforced", "valid in-worktree link resolves"],
+      "budgets": { "output_tokens": 180, "latency_ms": 1000 }
+    },
+    {
+      "id": "semantic-search-cold-index",
+      "fixture": "fixtures/node-repo",
+      "flags": ["OPENCODE_EXPERIMENTAL_SEMANTIC_SEARCH"],
+      "requiredTools": ["semantic_search"],
+      "forbiddenTools": ["grep"],
+      "assertions": ["metadata.mode == 'lexical'", "metadata.scheduled == true", "returns before index build"],
+      "budgets": { "output_tokens": 300, "latency_ms": 1000, "max_hits": 10 }
+    },
+    {
+      "id": "semantic-search-warm-index",
+      "fixture": "fixtures/node-repo",
+      "flags": ["OPENCODE_EXPERIMENTAL_SEMANTIC_SEARCH"],
+      "requiredTools": ["semantic_search"],
+      "forbiddenTools": ["grep"],
+      "assertions": ["metadata.mode == 'semantic'", "metadata.indexed == true", "backend == local_sparse"],
+      "budgets": { "output_tokens": 300, "latency_ms": 1000, "max_hits": 10 }
+    },
+    {
+      "id": "semantic-search-ignored-dirs",
+      "fixture": "fixtures/monorepo",
+      "flags": ["OPENCODE_EXPERIMENTAL_SEMANTIC_SEARCH"],
+      "requiredTools": ["semantic_search"],
+      "forbiddenTools": ["grep"],
+      "assertions": ["node_modules hits absent", "dist hits absent"],
+      "budgets": { "output_tokens": 300, "latency_ms": 1200, "max_hits": 10 }
+    },
+    {
+      "id": "semantic-search-permission-denied",
+      "fixture": "fixtures/node-repo",
+      "flags": ["OPENCODE_EXPERIMENTAL_SEMANTIC_SEARCH"],
+      "requiredTools": ["semantic_search"],
+      "forbiddenTools": [],
+      "assertions": ["grep permission is requested", "denied permission blocks search"],
+      "budgets": { "output_tokens": 120, "latency_ms": 1000 }
+    },
+    {
+      "id": "semantic-search-metamorphic-renamed-symbol",
+      "fixture": "fixtures/node-repo",
+      "flags": ["OPENCODE_EXPERIMENTAL_SEMANTIC_SEARCH"],
+      "requiredTools": ["semantic_search"],
+      "forbiddenTools": ["read"],
+      "assertions": ["equivalent query still finds renamed auth symbol", "ranking stays within bound"],
+      "budgets": { "output_tokens": 300, "latency_ms": 1500, "rank_delta": 3 }
+    },
+    {
+      "id": "semantic-search-metamorphic-moved-file",
+      "fixture": "fixtures/node-repo",
+      "flags": ["OPENCODE_EXPERIMENTAL_SEMANTIC_SEARCH"],
+      "requiredTools": ["semantic_search"],
+      "forbiddenTools": ["read"],
+      "assertions": ["moved file remains discoverable", "line span updates"],
+      "budgets": { "output_tokens": 300, "latency_ms": 1500, "rank_delta": 3 }
+    },
+    {
+      "id": "semantic-search-metamorphic-noise-files",
+      "fixture": "fixtures/monorepo",
+      "flags": ["OPENCODE_EXPERIMENTAL_SEMANTIC_SEARCH"],
+      "requiredTools": ["semantic_search"],
+      "forbiddenTools": ["read"],
+      "assertions": ["noise files do not displace target beyond rank_delta", "ignored dirs stay ignored"],
+      "budgets": { "output_tokens": 300, "latency_ms": 1500, "rank_delta": 3 }
+    },
+    {
+      "id": "agent-replay-first-repo-orientation",
+      "fixture": "fixtures/node-repo",
+      "flags": ["OPENCODE_EXPERIMENTAL_MACRO_TOOLS"],
+      "requiredTools": ["project_dossier"],
+      "forbiddenTools": ["read"],
+      "assertions": ["project_dossier is first discovery call", "read_loop_count <= 0"],
+      "budgets": { "tool_calls": 2, "output_tokens": 300, "schema_tokens": 200 }
+    },
+    {
+      "id": "agent-replay-symbol-lookup-before-edit",
+      "fixture": "fixtures/node-repo/src/service.ts",
+      "flags": ["OPENCODE_EXPERIMENTAL_MACRO_TOOLS"],
+      "requiredTools": ["view_outline"],
+      "forbiddenTools": ["read"],
+      "assertions": ["view_outline precedes read/edit", "no body read before symbol selection"],
+      "budgets": { "tool_calls": 3, "output_tokens": 260, "read_loop_count": 0 }
+    },
+    {
+      "id": "agent-replay-conceptual-bug-search",
+      "fixture": "fixtures/node-repo",
+      "flags": ["OPENCODE_EXPERIMENTAL_MACRO_TOOLS"],
+      "requiredTools": ["semantic_search"],
+      "forbiddenTools": ["grep"],
+      "assertions": ["semantic_search handles conceptual query", "max discovery loop count enforced"],
+      "budgets": { "tool_calls": 3, "output_tokens": 320, "read_loop_count": 1 }
+    },
+    {
+      "id": "agent-replay-primitive-fallback",
+      "fixture": "fixtures/node-repo",
+      "flags": [],
+      "requiredTools": ["grep"],
+      "forbiddenTools": ["project_dossier", "view_outline", "semantic_search"],
+      "assertions": ["default mode preserves primitive fallback", "custom/plugin schemas are untouched"],
+      "budgets": { "tool_calls": 5, "output_tokens": 500, "read_loop_count": 2 }
+    }
+  ]
+}

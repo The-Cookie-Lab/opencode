@@ -1,0 +1,7 @@
+{
+  "scripts": {
+    "build": "tsc",
+    "test": "bun test"
+  },
+  "main": "dist/index.js"
+}

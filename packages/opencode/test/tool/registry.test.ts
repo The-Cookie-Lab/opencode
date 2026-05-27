@@ -35,6 +35,7 @@ import { ProviderID, ModelID } from "@/provider/schema"
 import { ToolJsonSchema } from "@/tool/json-schema"
 import { MessageID, SessionID } from "@/session/schema"
 import { RuntimeFlags } from "@/effect/runtime-flags"
+import { ContextIntel } from "@/context-intel"
 
 const node = CrossSpawnSpawner.defaultLayer
 const configLayer = TestConfig.layer({
@@ -70,6 +71,7 @@ const registryLayer = (opts: RegistryLayerOptions = {}) =>
       Layer.provide(Ripgrep.defaultLayer),
       Layer.provide(Truncate.defaultLayer),
     )
+    .pipe(Layer.provide(ContextIntel.defaultLayer))
     .pipe(Layer.provide(RuntimeFlags.layer(opts.flags ?? {})))
 
 // Fake Plugin.Service that returns a single plugin whose `tool` map contains
@@ -102,6 +104,15 @@ const scout = testEffect(
 )
 const compact = testEffect(
   Layer.mergeAll(registryLayer({ flags: { experimentalCompactTools: true } }), node, Agent.defaultLayer),
+)
+const macro = testEffect(
+  Layer.mergeAll(registryLayer({ flags: { experimentalMacroTools: true } }), node, Agent.defaultLayer),
+)
+const contextTools = testEffect(
+  Layer.mergeAll(registryLayer({ flags: { experimentalContextTools: true } }), node, Agent.defaultLayer),
+)
+const semanticSearch = testEffect(
+  Layer.mergeAll(registryLayer({ flags: { experimentalSemanticSearch: true } }), node, Agent.defaultLayer),
 )
 const withBrokenPlugin = testEffect(
   Layer.mergeAll(registryLayer({ plugin: brokenPluginLayer }), node, Agent.defaultLayer),
@@ -182,6 +193,47 @@ describe("tool.registry", () => {
       expect(ids).toContain("apply_patch")
       expect(ids).not.toContain("rg")
       expect(ids).not.toContain("write_patch")
+      expect(ids).not.toContain("project_dossier")
+      expect(ids).not.toContain("view_outline")
+      expect(ids).not.toContain("semantic_search")
+    }),
+  )
+
+  macro.instance("adds macro tools behind the macro flag without removing primitives", () =>
+    Effect.gen(function* () {
+      const registry = yield* ToolRegistry.Service
+      const ids = yield* registry.ids()
+
+      expect(ids).toContain("project_dossier")
+      expect(ids).toContain("view_outline")
+      expect(ids).toContain("semantic_search")
+      expect(ids).toContain("read")
+      expect(ids).toContain("glob")
+      expect(ids).toContain("grep")
+      expect(ids).toContain("edit")
+      expect(ids).toContain("write")
+    }),
+  )
+
+  contextTools.instance("allows context tools without semantic search", () =>
+    Effect.gen(function* () {
+      const registry = yield* ToolRegistry.Service
+      const ids = yield* registry.ids()
+
+      expect(ids).toContain("project_dossier")
+      expect(ids).toContain("view_outline")
+      expect(ids).not.toContain("semantic_search")
+    }),
+  )
+
+  semanticSearch.instance("allows semantic search without context tools", () =>
+    Effect.gen(function* () {
+      const registry = yield* ToolRegistry.Service
+      const ids = yield* registry.ids()
+
+      expect(ids).toContain("semantic_search")
+      expect(ids).not.toContain("project_dossier")
+      expect(ids).not.toContain("view_outline")
     }),
   )
 
@@ -194,6 +246,9 @@ describe("tool.registry", () => {
       expect(ids).toContain("read")
       expect(ids).toContain("rg")
       expect(ids).toContain("write_patch")
+      expect(ids).not.toContain("project_dossier")
+      expect(ids).not.toContain("view_outline")
+      expect(ids).not.toContain("semantic_search")
       expect(ids).not.toContain("glob")
       expect(ids).not.toContain("grep")
       expect(ids).not.toContain("edit")
@@ -222,6 +277,28 @@ describe("tool.registry", () => {
       )
       expect(JSON.stringify(rg?.jsonSchema)).not.toContain("description")
       expect(JSON.stringify(writePatch?.jsonSchema)).not.toContain("description")
+    }),
+  )
+
+  macro.instance("uses compact macro descriptions only for built-in tools", () =>
+    Effect.gen(function* () {
+      const registry = yield* ToolRegistry.Service
+      const agent = yield* Agent.Service
+      const tools = yield* registry.tools({
+        providerID: ProviderID.opencode,
+        modelID: ModelID.make("test"),
+        agent: yield* agent.defaultInfo(),
+      })
+
+      expect(tools.find((tool) => tool.id === "project_dossier")?.description).toBe(
+        "repo dossier. no args. compact cwd/git/stack/scripts/entrypoints/deps.",
+      )
+      expect(tools.find((tool) => tool.id === "view_outline")?.description).toBe(
+        "source outline. args: path,maxSymbols?,includePrivate?. returns line kind name(signature).",
+      )
+      expect(tools.find((tool) => tool.id === "semantic_search")?.description).toBe(
+        "concept search. args: query,path?,max?,mode=auto|lexical|semantic. compact ranked spans.",
+      )
     }),
   )
 

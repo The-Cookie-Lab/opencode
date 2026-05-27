@@ -16,13 +16,16 @@ import { Parameters as Grep } from "../../src/tool/grep"
 import { Parameters as Invalid } from "../../src/tool/invalid"
 import { Parameters as Lsp } from "../../src/tool/lsp"
 import { Parameters as Plan } from "../../src/tool/plan"
+import { Parameters as ProjectDossier } from "../../src/tool/project_dossier"
 import { Parameters as Question } from "../../src/tool/question"
 import { Parameters as Read } from "../../src/tool/read"
 import { Parameters as Rg } from "../../src/tool/rg"
+import { Parameters as SemanticSearch } from "../../src/tool/semantic_search"
 import { Parameters as Shell } from "../../src/tool/shell"
 import { Parameters as Skill } from "../../src/tool/skill"
 import { Parameters as Task } from "../../src/tool/task"
 import { Parameters as Todo } from "../../src/tool/todo"
+import { Parameters as ViewOutline } from "../../src/tool/view_outline"
 import { Parameters as WebFetch } from "../../src/tool/webfetch"
 import { Parameters as WebSearch } from "../../src/tool/websearch"
 import { Parameters as Write } from "../../src/tool/write"
@@ -46,12 +49,15 @@ describe("tool parameters", () => {
     test("invalid", () => expect(toJsonSchema(Invalid)).toMatchSnapshot())
     test("lsp", () => expect(toJsonSchema(Lsp)).toMatchSnapshot())
     test("plan", () => expect(toJsonSchema(Plan)).toMatchSnapshot())
+    test("project_dossier", () => expect(toJsonSchema(ProjectDossier)).toMatchSnapshot())
     test("question", () => expect(toJsonSchema(Question)).toMatchSnapshot())
     test("read", () => expect(toJsonSchema(Read)).toMatchSnapshot())
     test("rg", () => expect(toJsonSchema(Rg)).toMatchSnapshot())
+    test("semantic_search", () => expect(toJsonSchema(SemanticSearch)).toMatchSnapshot())
     test("skill", () => expect(toJsonSchema(Skill)).toMatchSnapshot())
     test("task", () => expect(toJsonSchema(Task)).toMatchSnapshot())
     test("todo", () => expect(toJsonSchema(Todo)).toMatchSnapshot())
+    test("view_outline", () => expect(toJsonSchema(ViewOutline)).toMatchSnapshot())
     test("webfetch", () => expect(toJsonSchema(WebFetch)).toMatchSnapshot())
     test("websearch", () => expect(toJsonSchema(WebSearch)).toMatchSnapshot())
     test("write", () => expect(toJsonSchema(Write)).toMatchSnapshot())
@@ -195,6 +201,15 @@ describe("tool parameters", () => {
     })
   })
 
+  describe("project_dossier", () => {
+    test("accepts empty object", () => {
+      expect(parse(ProjectDossier, {})).toEqual({})
+    })
+    test("allows legacy extra fields as ignored no-op input", () => {
+      expect(parse(ProjectDossier, { unused: true })).toEqual({ unused: true })
+    })
+  })
+
   describe("question", () => {
     test("accepts questions array", () => {
       const parsed = parse(Question, {
@@ -251,6 +266,22 @@ describe("tool parameters", () => {
     })
   })
 
+  describe("semantic_search", () => {
+    test("accepts query-only", () => {
+      expect(parse(SemanticSearch, { query: "auth token refresh" })).toEqual({ query: "auth token refresh" })
+    })
+    test("accepts optional scope, max, and mode", () => {
+      const parsed = parse(SemanticSearch, { query: "runner", path: "src", max: 5, mode: "semantic" })
+      expect(parsed.mode).toBe("semantic")
+      expect(parsed.max).toBe(5)
+    })
+    test("rejects missing query, invalid mode, and non-positive max", () => {
+      expect(accepts(SemanticSearch, {})).toBe(false)
+      expect(accepts(SemanticSearch, { query: "x", mode: "bad" })).toBe(false)
+      expect(accepts(SemanticSearch, { query: "x", max: 0 })).toBe(false)
+    })
+  })
+
   describe("skill", () => {
     test("accepts name", () => {
       expect(parse(Skill, { name: "foo" }).name).toBe("foo")
@@ -283,6 +314,21 @@ describe("tool parameters", () => {
     })
     test("rejects missing todos", () => {
       expect(accepts(Todo, {})).toBe(false)
+    })
+  })
+
+  describe("view_outline", () => {
+    test("accepts path-only", () => {
+      expect(parse(ViewOutline, { path: "src/index.ts" })).toEqual({ path: "src/index.ts" })
+    })
+    test("accepts maxSymbols and includePrivate", () => {
+      const parsed = parse(ViewOutline, { path: "src/index.ts", maxSymbols: 20, includePrivate: true })
+      expect(parsed.maxSymbols).toBe(20)
+      expect(parsed.includePrivate).toBe(true)
+    })
+    test("rejects missing path and non-positive maxSymbols", () => {
+      expect(accepts(ViewOutline, {})).toBe(false)
+      expect(accepts(ViewOutline, { path: "src/index.ts", maxSymbols: 0 })).toBe(false)
     })
   })
 

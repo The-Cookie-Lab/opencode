@@ -24,6 +24,9 @@ import { ProviderID, type ModelID } from "../provider/schema"
 import { WebSearchTool } from "./websearch"
 import { RepoCloneTool } from "./repo_clone"
 import { RepoOverviewTool } from "./repo_overview"
+import { ProjectDossierTool } from "./project_dossier"
+import { ViewOutlineTool } from "./view_outline"
+import { SemanticSearchTool } from "./semantic_search"
 import { RepositoryCache } from "@/reference/repository-cache"
 import * as Log from "@opencode-ai/core/util/log"
 import { LspTool } from "./lsp"
@@ -56,6 +59,7 @@ import { Reference } from "@/reference/reference"
 import { BackgroundJob } from "@/background/job"
 import { RuntimeFlags } from "@/effect/runtime-flags"
 import { ToolJsonSchema } from "./json-schema"
+import { ContextIntel } from "@/context-intel"
 
 const log = Log.create({ service: "tool.registry" })
 const compactDescriptions = {
@@ -72,6 +76,9 @@ const compactDescriptions = {
   [WebSearchTool.id]: "web search. args: query,numResults?,livecrawl?,type?,contextMaxCharacters?.",
   [RepoCloneTool.id]: "clone/cache reference repo. args: repository,refresh?,branch?.",
   [RepoOverviewTool.id]: "summarize repo tree. args: repository?,path?,depth?.",
+  [ProjectDossierTool.id]: "repo dossier. no args. compact cwd/git/stack/scripts/entrypoints/deps.",
+  [ViewOutlineTool.id]: "source outline. args: path,maxSymbols?,includePrivate?. returns line kind name(signature).",
+  [SemanticSearchTool.id]: "concept search. args: query,path?,max?,mode=auto|lexical|semantic. compact ranked spans.",
   [SkillTool.id]: "load matched skill. args: name.",
   [LspTool.id]: "semantic code intel. args: operation,filePath,line?,character?,query?.",
   [PlanExitTool.id]: "exit plan mode after complete plan.",
@@ -125,6 +132,7 @@ export const layer: Layer.Layer<
   | Format.Service
   | Truncate.Service
   | RuntimeFlags.Service
+  | ContextIntel.Service
 > = Layer.effect(
   Service,
   Effect.gen(function* () {
@@ -146,6 +154,9 @@ export const layer: Layer.Layer<
     const websearch = yield* WebSearchTool
     const repoClone = yield* RepoCloneTool
     const repoOverview = yield* RepoOverviewTool
+    const projectDossier = yield* ProjectDossierTool
+    const viewOutline = yield* ViewOutlineTool
+    const semanticSearch = yield* SemanticSearchTool
     const shell = yield* ShellTool
     const globtool = yield* GlobTool
     const writetool = yield* WriteTool
@@ -244,6 +255,8 @@ export const layer: Layer.Layer<
 
         yield* config.get()
         const questionEnabled = ["app", "cli", "desktop"].includes(flags.client) || flags.enableQuestionTool
+        const contextToolsEnabled = flags.experimentalMacroTools || flags.experimentalContextTools
+        const semanticSearchEnabled = flags.experimentalMacroTools || flags.experimentalSemanticSearch
 
         const tool = yield* Effect.all({
           invalid: Tool.init(invalid),
@@ -259,6 +272,9 @@ export const layer: Layer.Layer<
           search: Tool.init(websearch),
           repo_clone: Tool.init(repoClone),
           repo_overview: Tool.init(repoOverview),
+          project_dossier: Tool.init(projectDossier),
+          view_outline: Tool.init(viewOutline),
+          semantic_search: Tool.init(semanticSearch),
           skill: Tool.init(skilltool),
           patch: Tool.init(patchtool),
           rg: Tool.init(rgtool),
@@ -275,6 +291,8 @@ export const layer: Layer.Layer<
                 tool.invalid,
                 ...(questionEnabled ? [tool.question] : []),
                 tool.shell,
+                ...(contextToolsEnabled ? [tool.project_dossier, tool.view_outline] : []),
+                ...(semanticSearchEnabled ? [tool.semantic_search] : []),
                 tool.read,
                 tool.rg,
                 tool.write_patch,
@@ -292,6 +310,8 @@ export const layer: Layer.Layer<
                 ...(questionEnabled ? [tool.question] : []),
                 tool.shell,
                 tool.read,
+                ...(contextToolsEnabled ? [tool.project_dossier, tool.view_outline] : []),
+                ...(semanticSearchEnabled ? [tool.semantic_search] : []),
                 tool.glob,
                 tool.grep,
                 tool.edit,
@@ -389,7 +409,7 @@ export const layer: Layer.Layer<
             output.parameters === tool.parameters || output.jsonSchema !== tool.jsonSchema
               ? output.jsonSchema
               : undefined
-          const compact = flags.experimentalCompactTools && builtins.has(tool)
+          const compact = (flags.experimentalCompactTools || flags.experimentalMacroTools) && builtins.has(tool)
           return {
             id: tool.id,
             description: [
@@ -444,6 +464,7 @@ export const defaultLayer = Layer.suspend(() =>
       Layer.provide(Ripgrep.defaultLayer),
       Layer.provide(Truncate.defaultLayer),
     )
+    .pipe(Layer.provide(ContextIntel.defaultLayer))
     .pipe(Layer.provide(RuntimeFlags.defaultLayer)),
 )
 

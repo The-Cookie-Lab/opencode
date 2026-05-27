@@ -1,0 +1,61 @@
+name: macro-quality
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/macro-quality.yml"
+      - "packages/opencode/src/context-intel/**"
+      - "packages/opencode/src/effect/runtime-flags.ts"
+      - "packages/opencode/src/permission/**"
+      - "packages/opencode/src/session/prompt.ts"
+      - "packages/opencode/src/skill/prompt/**"
+      - "packages/opencode/src/tool/registry.ts"
+      - "packages/opencode/src/tool/project_dossier.ts"
+      - "packages/opencode/src/tool/view_outline.ts"
+      - "packages/opencode/src/tool/semantic_search.ts"
+      - "packages/opencode/src/quality/**"
+      - "packages/opencode/test/quality/**"
+      - "packages/opencode/test/tool/**"
+  workflow_dispatch:
+
+concurrency:
+  group: macro-quality-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  macro-quality:
+    name: macro-quality (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [blacksmith-4vcpu-ubuntu-2404, macos-14]
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: "24"
+
+      - name: Setup Bun
+        uses: ./.github/actions/setup-bun
+
+      - name: Run macro quality gates
+        working-directory: packages/opencode
+        run: bun run macro-quality -- --changed-from origin/${{ github.base_ref || 'dev' }} --mode ci
+
+      - name: Upload macro quality report
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: macro-quality-${{ matrix.os }}-${{ github.run_attempt }}
+          if-no-files-found: ignore
+          retention-days: 14
+          path: packages/opencode/.artifacts/macro-quality

@@ -63,6 +63,7 @@ import { RepositoryCache } from "../../src/reference/repository-cache"
 import { SyncEvent } from "@/sync"
 import { RuntimeFlags } from "@/effect/runtime-flags"
 import { EventV2Bridge } from "@/event-v2-bridge"
+import { ContextIntel } from "@/context-intel"
 
 void Log.init({ print: false })
 
@@ -144,6 +145,7 @@ function makeHttp() {
     Layer.provide(Reference.defaultLayer),
     Layer.provide(Ripgrep.defaultLayer),
     Layer.provide(Format.defaultLayer),
+    Layer.provide(ContextIntel.defaultLayer),
     Layer.provide(RuntimeFlags.layer({ experimentalEventSystem: true })),
     Layer.provideMerge(todo),
     Layer.provideMerge(question),
