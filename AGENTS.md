@@ -2,6 +2,14 @@
 - The default branch in this repo is `dev`.
 - Local `main` ref may not exist; use `dev` or `origin/dev` for diffs.
 
+## High-ROI Agent Notes
+
+- For tool-surface or context-budget work, start with `packages/opencode/src/tool/registry.ts`, `packages/opencode/src/session/tools.ts`, `packages/opencode/src/tool/json-schema.ts`, and the relevant `packages/opencode/src/tool/*.ts` or `*.txt` files before designing a change.
+- Keep experimental tool behavior opt-in through `RuntimeFlags` until the default surface is intentionally changed. Add tests proving both default and experimental tool registries, including custom and plugin tools when registry behavior changes.
+- Tool parameter or description changes need `packages/opencode/test/tool/parameters.test.ts` coverage and regenerated snapshots via `bun test -u test/tool/parameters.test.ts` from `packages/opencode`; do not hand-edit generated snapshot bodies.
+- In isolated CookieCode/opencode worktrees, verify branch builds with `bun run ./packages/opencode/script/build.ts --single` from that worktree. The parent CookieCode `./cookiecode build opencode` targets the main checkout, not arbitrary worktrees.
+- The single-binary build may repair optional native packages and emit noisy Vite warnings. After every build, check `git status --short` and package or lockfile diffs before staging.
+
 ## Commits and PR Titles
 
 Use conventional commit-style messages and PR titles: `type(scope): summary`.
