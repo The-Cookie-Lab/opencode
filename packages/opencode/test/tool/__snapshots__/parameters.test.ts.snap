@@ -212,6 +212,14 @@ exports[`tool parameters JSON Schema (wire shape) plan 1`] = `
 }
 `;
 
+exports[`tool parameters JSON Schema (wire shape) project_dossier 1`] = `
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "properties": {},
+  "type": "object",
+}
+`;
+
 exports[`tool parameters JSON Schema (wire shape) question 1`] = `
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -350,6 +358,42 @@ exports[`tool parameters JSON Schema (wire shape) rg 1`] = `
 }
 `;
 
+exports[`tool parameters JSON Schema (wire shape) semantic_search 1`] = `
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "properties": {
+    "max": {
+      "description": "Maximum ranked hits to return. Defaults to 10.",
+      "exclusiveMinimum": 0,
+      "maximum": 9007199254740991,
+      "minimum": -9007199254740991,
+      "type": "integer",
+    },
+    "mode": {
+      "description": "auto|lexical|semantic. Cold semantic indexes return lexical hits immediately and warm locally.",
+      "enum": [
+        "auto",
+        "lexical",
+        "semantic",
+      ],
+      "type": "string",
+    },
+    "path": {
+      "description": "Optional directory or file scope, absolute or relative to cwd. Defaults to cwd.",
+      "type": "string",
+    },
+    "query": {
+      "description": "Natural-language or conceptual code search query.",
+      "type": "string",
+    },
+  },
+  "required": [
+    "query",
+  ],
+  "type": "object",
+}
+`;
+
 exports[`tool parameters JSON Schema (wire shape) skill 1`] = `
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -437,6 +481,33 @@ exports[`tool parameters JSON Schema (wire shape) todo 1`] = `
   },
   "required": [
     "todos",
+  ],
+  "type": "object",
+}
+`;
+
+exports[`tool parameters JSON Schema (wire shape) view_outline 1`] = `
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "properties": {
+    "includePrivate": {
+      "description": "Include private/internal symbols. Defaults to false.",
+      "type": "boolean",
+    },
+    "maxSymbols": {
+      "description": "Maximum symbol rows to return. Defaults to 120.",
+      "exclusiveMinimum": 0,
+      "maximum": 9007199254740991,
+      "minimum": -9007199254740991,
+      "type": "integer",
+    },
+    "path": {
+      "description": "Source file path, absolute or relative to the current cwd.",
+      "type": "string",
+    },
+  },
+  "required": [
+    "path",
   ],
   "type": "object",
 }

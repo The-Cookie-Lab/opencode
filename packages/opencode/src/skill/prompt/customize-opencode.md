@@ -340,6 +340,17 @@ repo_overview, lsp, doom_loop, skill`. Some of these (`todowrite,
 question, webfetch, websearch, doom_loop`) only accept a flat
 action, not a per-pattern object.
 
+Experimental macro context tools are opt-in. `OPENCODE_EXPERIMENTAL_MACRO_TOOLS`
+adds `project_dossier`, `view_outline`, and `semantic_search` while keeping the
+legacy primitives available. Use `OPENCODE_EXPERIMENTAL_CONTEXT_TOOLS` for only
+`project_dossier`/`view_outline`, or `OPENCODE_EXPERIMENTAL_SEMANTIC_SEARCH` for
+only `semantic_search`. Agents should prefer `project_dossier` before broad
+repo reads, `view_outline` before reading large source files for structure, and
+`semantic_search` when the query is conceptual rather than an exact string.
+Macro-tool changes should run `bun run macro-quality -- --changed-from
+origin/dev --mode local` from `packages/opencode`; CI runs the same framework in
+blocking mode and stores `.artifacts/macro-quality/report.json`.
+
 `external_directory` patterns are filesystem paths (use `~/`, absolute paths,
 or globs like `~/projects/**`).
 

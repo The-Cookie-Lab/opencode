@@ -1,0 +1,8 @@
+{
+  "version": 1,
+  "tools": {
+    "project_dossier": ["output", "metadata.cwd", "metadata.worktree", "metadata.truncated"],
+    "view_outline": ["output", "metadata.source", "metadata.symbol_count", "metadata.truncated"],
+    "semantic_search": ["output", "metadata.mode", "metadata.indexed", "metadata.backend"]
+  }
+}
