@@ -5,6 +5,7 @@ import {
   estimateDetailedContextBreakdown,
 } from "./session-context-breakdown"
 import type { Message, Part } from "@opencode-ai/sdk/v2/client"
+import type { ServerPromptTokensDetails } from "./session-context-breakdown"
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -407,6 +408,275 @@ describe("estimateSessionContextBreakdown", () => {
     const system = result.find(s => s.key === "system")!
     expect(system.tokens).toBeLessThanOrEqual(500)
     expect(system.tokens).toBeGreaterThan(0)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// estimateDetailedContextBreakdown — server-provided breakdown
+// ---------------------------------------------------------------------------
+describe("estimateDetailedContextBreakdown — serverBreakdown", () => {
+  const emptyMessages: Message[] = []
+  const emptyParts: Record<string, Part[]> = {}
+
+  const makeServerBreakdown = (
+    overrides: Partial<ServerPromptTokensDetails> = {},
+  ): ServerPromptTokensDetails => ({
+    messages: [],
+    tools: [],
+    template_overhead: 0,
+    image_tokens: 0,
+    ...overrides,
+  })
+
+  // --- fallback: no server data → use heuristic ---
+
+  it("falls back to heuristic when serverBreakdown is undefined", () => {
+    const msg = makeMsg({ role: "user" })
+    const result = estimateDetailedContextBreakdown({
+      messages: [msg], parts: { [msg.id]: [textPart("hello world")] }, input: 10,
+    })
+    // ceil(11/4) = 3
+    expect(result.find(s => s.key === "user_messages")!.tokens).toBe(3)
+  })
+
+  it("falls back to heuristic when serverBreakdown.messages is empty array", () => {
+    const msg = makeMsg({ role: "user" })
+    const result = estimateDetailedContextBreakdown({
+      messages: [msg],
+      parts: { [msg.id]: [textPart("hello world")] },
+      input: 10,
+      serverBreakdown: { messages: [], tools: [], template_overhead: 0, image_tokens: 0 },
+    })
+    // empty messages → fallback to heuristic
+    expect(result.find(s => s.key === "user_messages")!.tokens).toBe(3)
+  })
+
+  // --- system_prompt from server ---
+
+  it("maps server system-role messages to system_prompt", () => {
+    const sb = makeServerBreakdown({
+      messages: [{ role: "system", tokens: 150, cached: 0 }],
+      template_overhead: 10,
+    })
+    const result = estimateDetailedContextBreakdown({
+      messages: emptyMessages, parts: emptyParts, input: 200, serverBreakdown: sb,
+    })
+    expect(result.find(s => s.key === "system_prompt")!.tokens).toBe(150)
+  })
+
+  // --- user_messages from server ---
+
+  it("maps server user-role messages to user_messages", () => {
+    const sb = makeServerBreakdown({
+      messages: [
+        { role: "user", tokens: 25, cached: 0 },
+        { role: "user", tokens: 35, cached: 0 },
+      ],
+      template_overhead: 10,
+    })
+    const result = estimateDetailedContextBreakdown({
+      messages: emptyMessages, parts: emptyParts, input: 100, serverBreakdown: sb,
+    })
+    expect(result.find(s => s.key === "user_messages")!.tokens).toBe(60)
+  })
+
+  // --- assistant_messages from server ---
+
+  it("maps server assistant-role messages to assistant_messages", () => {
+    const sb = makeServerBreakdown({
+      messages: [{ role: "assistant", tokens: 80, cached: 0 }],
+      template_overhead: 5,
+    })
+    const result = estimateDetailedContextBreakdown({
+      messages: emptyMessages, parts: emptyParts, input: 100, serverBreakdown: sb,
+    })
+    expect(result.find(s => s.key === "assistant_messages")!.tokens).toBe(80)
+  })
+
+  // --- tool_results from server ---
+
+  it("maps server tool-role messages to tool_results", () => {
+    const sb = makeServerBreakdown({
+      messages: [{ role: "tool", tokens: 42, cached: 0 }],
+      template_overhead: 8,
+    })
+    const result = estimateDetailedContextBreakdown({
+      messages: emptyMessages, parts: emptyParts, input: 60, serverBreakdown: sb,
+    })
+    expect(result.find(s => s.key === "tool_results")!.tokens).toBe(42)
+  })
+
+  // --- tool_definitions from server ---
+
+  it("maps server tools array to tool_definitions", () => {
+    const sb = makeServerBreakdown({
+      tools: [
+        { name: "shell", tokens: 500 },
+        { name: "read", tokens: 225 },
+      ],
+      template_overhead: 10,
+    })
+    const result = estimateDetailedContextBreakdown({
+      messages: emptyMessages, parts: emptyParts, input: 800, serverBreakdown: sb,
+    })
+    expect(result.find(s => s.key === "tool_definitions")!.tokens).toBe(725)
+  })
+
+  it("excludes tool_definitions when server tools array is empty", () => {
+    const sb = makeServerBreakdown({ template_overhead: 10 })
+    const result = estimateDetailedContextBreakdown({
+      messages: emptyMessages, parts: emptyParts, input: 50, serverBreakdown: sb,
+    })
+    expect(result.find(s => s.key === "tool_definitions")).toBeUndefined()
+  })
+
+  // --- overhead from server (template_overhead) ---
+
+  it("maps server template_overhead to overhead", () => {
+    const sb = makeServerBreakdown({ template_overhead: 45 })
+    const result = estimateDetailedContextBreakdown({
+      messages: emptyMessages, parts: emptyParts, input: 100, serverBreakdown: sb,
+    })
+    expect(result.find(s => s.key === "overhead")!.tokens).toBe(45)
+  })
+
+  it("excludes overhead when template_overhead is 0", () => {
+    // Server path with messages but no template overhead → overhead excluded
+    const sb = makeServerBreakdown({
+      messages: [{ role: "user", tokens: 40, cached: 0 }],
+      template_overhead: 0,
+    })
+    const result = estimateDetailedContextBreakdown({
+      messages: emptyMessages, parts: emptyParts, input: 60, serverBreakdown: sb,
+    })
+    expect(result.find(s => s.key === "overhead")).toBeUndefined()
+  })
+
+  // --- cached messages (not broken out, just ensures they don't break mapping) ---
+
+  it("handles server messages with cached > 0 correctly", () => {
+    const sb = makeServerBreakdown({
+      messages: [
+        { role: "system", tokens: 200, cached: 200 },
+        { role: "user", tokens: 50, cached: 0 },
+      ],
+      template_overhead: 30,
+    })
+    const result = estimateDetailedContextBreakdown({
+      messages: emptyMessages, parts: emptyParts, input: 300, serverBreakdown: sb,
+    })
+    expect(result.find(s => s.key === "system_prompt")!.tokens).toBe(200)
+    expect(result.find(s => s.key === "user_messages")!.tokens).toBe(50)
+    expect(result.find(s => s.key === "overhead")!.tokens).toBe(30)
+  })
+
+  // --- percentages ---
+
+  it("computes correct percentages from server data", () => {
+    const sb = makeServerBreakdown({
+      messages: [
+        { role: "system", tokens: 100, cached: 0 },
+        { role: "user", tokens: 50, cached: 0 },
+        { role: "assistant", tokens: 30, cached: 0 },
+      ],
+      template_overhead: 20,
+    })
+    const result = estimateDetailedContextBreakdown({
+      messages: emptyMessages, parts: emptyParts, input: 200, serverBreakdown: sb,
+    })
+    expect(result.find(s => s.key === "system_prompt")!.percent).toBe(50)
+    expect(result.find(s => s.key === "user_messages")!.percent).toBe(25)
+    expect(result.find(s => s.key === "assistant_messages")!.percent).toBe(15)
+    expect(result.find(s => s.key === "overhead")!.percent).toBe(10)
+  })
+
+  // --- image_tokens (allocated to user_messages) ---
+
+  it("includes image_tokens in user_messages when server reports them", () => {
+    const sb = makeServerBreakdown({
+      messages: [
+        { role: "user", tokens: 30, cached: 0 },
+      ],
+      image_tokens: 512,
+      template_overhead: 20,
+    })
+    const result = estimateDetailedContextBreakdown({
+      messages: emptyMessages, parts: emptyParts, input: 600, serverBreakdown: sb,
+    })
+    // user_messages should be 30 + 512 = 542
+    expect(result.find(s => s.key === "user_messages")!.tokens).toBe(542)
+  })
+
+  it("distributes image_tokens proportionally across user messages when multiple", () => {
+    const sb = makeServerBreakdown({
+      messages: [
+        { role: "user", tokens: 10, cached: 0 },
+        { role: "user", tokens: 30, cached: 0 },
+      ],
+      image_tokens: 200,
+      template_overhead: 15,
+    })
+    const result = estimateDetailedContextBreakdown({
+      messages: emptyMessages, parts: emptyParts, input: 300, serverBreakdown: sb,
+    })
+    // image_tokens = 200 distributed proportionally: 10/40*200=50, 30/40*200=150
+    // user_messages total = 10+50+30+150 = 240
+    expect(result.find(s => s.key === "user_messages")!.tokens).toBe(240)
+  })
+
+  it("zero image_tokens does not affect output segments", () => {
+    const sb = makeServerBreakdown({
+      messages: [{ role: "user", tokens: 40, cached: 0 }],
+      image_tokens: 0,
+      template_overhead: 10,
+    })
+    const result = estimateDetailedContextBreakdown({
+      messages: emptyMessages, parts: emptyParts, input: 60, serverBreakdown: sb,
+    })
+    expect(result.find(s => s.key === "user_messages")!.tokens).toBe(40)
+    expect(result).toHaveLength(2) // user_messages + overhead
+  })
+
+  // --- edge cases ---
+
+  it("handles server data where sum exceeds input (non-negative overhead)", () => {
+    const sb = makeServerBreakdown({
+      messages: [
+        { role: "system", tokens: 200, cached: 0 },
+      ],
+      template_overhead: 50,
+    })
+    const result = estimateDetailedContextBreakdown({
+      messages: emptyMessages, parts: emptyParts, input: 100, serverBreakdown: sb,
+    })
+    // allocated=250 > input=100 → overhead clamped to 0 → excluded
+    expect(result.find(s => s.key === "system_prompt")!.tokens).toBe(200)
+    expect(result.find(s => s.key === "overhead")).toBeUndefined()
+  })
+
+  it("returns empty array when input is 0 even with server data", () => {
+    const sb = makeServerBreakdown({
+      messages: [{ role: "user", tokens: 10, cached: 0 }],
+    })
+    const result = estimateDetailedContextBreakdown({
+      messages: emptyMessages, parts: emptyParts, input: 0, serverBreakdown: sb,
+    })
+    expect(result).toEqual([])
+  })
+
+  it("filters out zero-token segments from server data", () => {
+    const sb = makeServerBreakdown({
+      messages: [
+        { role: "user", tokens: 10, cached: 0 },
+        { role: "tool", tokens: 0, cached: 0 },
+      ],
+      template_overhead: 10,
+    })
+    const result = estimateDetailedContextBreakdown({
+      messages: emptyMessages, parts: emptyParts, input: 30, serverBreakdown: sb,
+    })
+    expect(result.find(s => s.key === "tool_results")).toBeUndefined()
+    expect(result).toHaveLength(2) // user_messages + overhead
   })
 })
 

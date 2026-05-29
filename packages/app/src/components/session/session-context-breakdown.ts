@@ -23,6 +23,31 @@ export type DetailedBreakdownSegment = {
   percent: number
 }
 
+/** Per-message token detail as provided by the model-server's
+ *  {@code prompt_tokens_details.messages} field. */
+export type ServerMessageTokenDetail = {
+  role: string
+  tokens: number
+  cached: number
+}
+
+/** Per-tool token detail as provided by the model-server's
+ *  {@code prompt_tokens_details.tools} field. */
+export type ServerToolTokenDetail = {
+  name: string
+  tokens: number
+}
+
+/** Server-provided prompt token breakdown matching the
+ *  {@code usage.prompt_tokens_details} shape injected by the model-server
+ *  gateway. */
+export type ServerPromptTokensDetails = {
+  messages: ServerMessageTokenDetail[]
+  tools: ServerToolTokenDetail[]
+  template_overhead: number
+  image_tokens: number
+}
+
 const estimateTokens = (chars: number) => Math.ceil(chars / 4)
 const toPercent = (tokens: number, input: number) => (tokens / input) * 100
 const toPercentLabel = (tokens: number, input: number) => Math.round(toPercent(tokens, input) * 10) / 10
@@ -184,14 +209,100 @@ export function estimateToolDefinitionTokens(tools: Record<string, boolean> | un
   return estimateTokens(chars)
 }
 
+// ── server-provided breakdown helper ─────────────────────────────────────
+
+function _buildFromServerBreakdown(
+  sb: ServerPromptTokensDetails,
+  input: number,
+): DetailedBreakdownSegment[] {
+  // Aggregate per-role message tokens
+  let systemTokens = 0
+  let userTokens = 0
+  let assistantTokens = 0
+  let toolResultTokens = 0
+
+  // Only distribute image_tokens across user messages; if none exist,
+  // add them to a synthetic "system" bucket so they don't vanish.
+  const userMsgs = sb.messages.filter((m) => m.role === "user")
+  const userTextSum = userMsgs.reduce((s, m) => s + m.tokens, 0)
+
+  let imageRemaining = sb.image_tokens
+  for (const msg of sb.messages) {
+    let tokens = msg.tokens
+    // Distribute image tokens proportionally across user messages
+    if (msg.role === "user" && imageRemaining > 0 && userTextSum > 0) {
+      const share = Math.min(
+        Math.round((msg.tokens / userTextSum) * sb.image_tokens),
+        imageRemaining,
+      )
+      tokens += share
+      imageRemaining -= share
+    }
+    switch (msg.role) {
+      case "system":
+        systemTokens += tokens
+        break
+      case "user":
+        userTokens += tokens
+        break
+      case "assistant":
+        assistantTokens += tokens
+        break
+      case "tool":
+        toolResultTokens += tokens
+        break
+      default:
+        userTokens += tokens
+    }
+  }
+  // Any leftover image tokens (e.g. no user messages) go to system
+  if (imageRemaining > 0) {
+    systemTokens += imageRemaining
+  }
+
+  const toolDefTokens = sb.tools.reduce((sum, t) => sum + t.tokens, 0)
+  const allocated =
+    systemTokens + toolDefTokens + userTokens + assistantTokens + toolResultTokens
+  const remaining = Math.max(0, input - allocated)
+  const overhead = Math.min(sb.template_overhead, remaining)
+
+  const segments: DetailedBreakdownSegment[] = ([
+    { key: "system_prompt", tokens: systemTokens, percent: toPercentLabel(systemTokens, input) },
+    { key: "tool_definitions", tokens: toolDefTokens, percent: toPercentLabel(toolDefTokens, input) },
+    { key: "user_messages", tokens: userTokens, percent: toPercentLabel(userTokens, input) },
+    { key: "assistant_messages", tokens: assistantTokens, percent: toPercentLabel(assistantTokens, input) },
+    { key: "tool_results", tokens: toolResultTokens, percent: toPercentLabel(toolResultTokens, input) },
+    { key: "overhead", tokens: overhead, percent: toPercentLabel(overhead, input) },
+  ] satisfies DetailedBreakdownSegment[]).filter((s) => s.tokens > 0)
+
+  return segments
+}
+
+// ── public breakdown API ────────────────────────────────────────────────
+
 export function estimateDetailedContextBreakdown(args: {
   messages: Message[]
   parts: Record<string, Part[] | undefined>
   input: number
   systemPrompt?: string
   tools?: Record<string, boolean>
+  serverBreakdown?: ServerPromptTokensDetails
 }): DetailedBreakdownSegment[] {
   if (!args.input) return []
+
+  // ── server-provided exact token counts ──────────────────────────────
+  const sb = args.serverBreakdown
+  if (
+    sb &&
+    (sb.messages.length > 0 ||
+      sb.tools.length > 0 ||
+      sb.template_overhead > 0 ||
+      sb.image_tokens > 0)
+  ) {
+    return _buildFromServerBreakdown(sb, args.input)
+  }
+
+  // ── heuristic fallback (ceil(chars / 4)) ────────────────────────────
 
   const systemPromptTokens = estimateTokens(args.systemPrompt?.length ?? 0)
   const toolDefTokens = estimateToolDefinitionTokens(args.tools)
