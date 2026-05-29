@@ -63,25 +63,50 @@ import { ContextIntel } from "@/context-intel"
 
 const log = Log.create({ service: "tool.registry" })
 const compactDescriptions = {
-  [InvalidTool.id]: "never call.",
-  [QuestionTool.id]: "ask user; concise choices; only when blocked.",
-  [ShellTool.id]: "exec shell. use for tests/build/git/processes. args: command,description,timeout?,workdir?.",
-  [ReadTool.id]: "read file/dir. args: filePath,offset?,limit?. returns numbered lines/attachments.",
+  [InvalidTool.id]: "Never call.",
+  [QuestionTool.id]:
+    "Ask user. Required: questions[{header, question, options?}]. Only when blocked or unclear.",
+  [ShellTool.id]:
+    "Run shell command. For git/npm/docker/builds/tests. NOT for file ops. Required: command, description (5-10 word summary of the command's purpose. E.g. 'List files in current directory'). Optional: timeout (ms), workdir (use instead of cd).",
+  [ReadTool.id]:
+    "Read file or list dir. Required: filePath (absolute). Optional: offset (start line, 1-indexed), limit (max lines, default 2000). Returns numbered lines. Reads images/PDFs.",
   [RgTool.id]:
-    "search/list via ripgrep. args: pattern,path?,mode=content|files,glob?,literal?,ignoreCase?,hidden?,max?.",
-  [WritePatchTool.id]: "edit exact. args: path,old,new,count?. old='' create/overwrite. fail unless count matches.",
-  [TaskTool.id]: "delegate subagent. args: description,prompt,subagent_type,background?.",
-  [WebFetchTool.id]: "fetch URL. args: url,format?,timeout?.",
-  [TodoWriteTool.id]: "replace todos. args: todos[]. keep statuses current.",
-  [WebSearchTool.id]: "web search. args: query,numResults?,livecrawl?,type?,contextMaxCharacters?.",
-  [RepoCloneTool.id]: "clone/cache reference repo. args: repository,refresh?,branch?.",
-  [RepoOverviewTool.id]: "summarize repo tree. args: repository?,path?,depth?.",
-  [ProjectDossierTool.id]: "repo dossier. no args. compact cwd/git/stack/scripts/entrypoints/deps.",
-  [ViewOutlineTool.id]: "source outline. args: path,maxSymbols?,includePrivate?. returns line kind name(signature).",
-  [SemanticSearchTool.id]: "concept search. args: query,path?,max?,mode=auto|lexical|semantic. compact ranked spans.",
-  [SkillTool.id]: "load matched skill. args: name.",
-  [LspTool.id]: "semantic code intel. args: operation,filePath,line?,character?,query?.",
-  [PlanExitTool.id]: "exit plan mode after complete plan.",
+    "Ripgrep search/list. Required: pattern (regex/glob). Optional: path (root, default cwd), mode=content|files, glob (file filter), literal (no regex), ignoreCase, hidden (show dotfiles), max (default 100).",
+  [WritePatchTool.id]:
+    "Exact string replace in file. Required: path, old (text to find; empty creates file), new (replacement). Optional: count (expected matches, default 1). Fails on count mismatch.",
+  [TaskTool.id]:
+    "Launch subagent. Required: description (3-5 words), prompt (full task), subagent_type. Optional: background (async), task_id (resume session).",
+  [WebFetchTool.id]:
+    "Fetch URL. Required: url. Optional: format=text|markdown|html, timeout (sec, max 120).",
+  [TodoWriteTool.id]:
+    "Replace todos. Required: todos[{content, status, priority}]. Status: pending|in_progress|completed|cancelled. Priority: high|medium|low. Max one in_progress. Always submit full list.",
+  [WebSearchTool.id]:
+    "Web search. Required: query. Optional: numResults (default 8), livecrawl=fallback|preferred, type=auto|fast|deep, contextMaxChars (default 10000).",
+  [RepoCloneTool.id]:
+    "Clone repo into cache. Required: repository (git URL or owner/repo). Optional: refresh, branch. Returns local path.",
+  [RepoOverviewTool.id]:
+    "Summarize repo structure. Required: repository or path. Optional: depth (default 3). Reports ecosystems, entrypoints, deps.",
+  [ProjectDossierTool.id]:
+    "Repo dossier. No params. Reports cwd, git, package mgr, scripts, entrypoints, deps.",
+  [ViewOutlineTool.id]:
+    "Source file outline. Required: path. Optional: maxSymbols (default 120), includePrivate (default false). Returns [line, kind, name, signature].",
+  [SemanticSearchTool.id]:
+    "Semantic codebase search. Required: query. Optional: path (default cwd), max (default 10), mode=auto|lexical|semantic. Returns scored spans.",
+  [SkillTool.id]:
+    "Load skill instructions. Required: name (exact name from available skills list).",
+  [LspTool.id]:
+    "LSP code intel. Required: operation (goToDefinition|findReferences|hover|documentSymbol|workspaceSymbol|goToImplementation|prepareCallHierarchy|incomingCalls|outgoingCalls), filePath, line, character. Optional: query.",
+  [PlanExitTool.id]: "Exit plan mode when ready.",
+  [GlobTool.id]:
+    "Find files by glob. Required: pattern. Optional: path (default cwd). Returns absolute paths.",
+  [GrepTool.id]:
+    "Search file contents by regex. Required: pattern. Optional: path (default cwd), include (file filter).",
+  [EditTool.id]:
+    "Edit file by string replace (diff). Required: filePath, oldString, newString. Optional: replaceAll (default false).",
+  [WriteTool.id]:
+    "Write/overwrite file. Required: filePath, content. Creates parent dirs.",
+  [ApplyPatchTool.id]:
+    "Apply unified diff patch. Required: patchText.",
 } satisfies Record<string, string>
 
 export function webSearchEnabled(providerID: ProviderID, flags = { exa: false, parallel: false }) {
@@ -482,7 +507,7 @@ function stripSchema(value: unknown): unknown {
   if (typeof value !== "object" || value === null) return value
   return Object.fromEntries(
     Object.entries(value)
-      .filter(([key]) => key !== "$schema" && key !== "description" && key !== "title")
+      .filter(([key]) => key !== "$schema" && key !== "title")
       .map(([key, item]) => [key, stripSchema(item)]),
   )
 }

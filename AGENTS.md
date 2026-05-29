@@ -1,118 +1,89 @@
-- To regenerate the JavaScript SDK, run `./packages/sdk/js/script/build.ts`.
-- The default branch in this repo is `dev`.
-- Local `main` ref may not exist; use `dev` or `origin/dev` for diffs.
+- Default branch: `dev`. Local `main` may not exist; use `dev` or `origin/dev` for diffs.
+- Regenerate JS SDK: `./packages/sdk/js/script/build.ts`.
 
 ## High-ROI Agent Notes
 
-- For tool-surface or context-budget work, start with `packages/opencode/src/tool/registry.ts`, `packages/opencode/src/session/tools.ts`, `packages/opencode/src/tool/json-schema.ts`, and the relevant `packages/opencode/src/tool/*.ts` or `*.txt` files before designing a change.
-- Keep experimental tool behavior opt-in through `RuntimeFlags` until the default surface is intentionally changed. Add tests proving both default and experimental tool registries, including custom and plugin tools when registry behavior changes.
-- Tool parameter or description changes need `packages/opencode/test/tool/parameters.test.ts` coverage and regenerated snapshots via `bun test -u test/tool/parameters.test.ts` from `packages/opencode`; do not hand-edit generated snapshot bodies.
-- In isolated CookieCode/opencode worktrees, verify branch builds with `bun run ./packages/opencode/script/build.ts --single` from that worktree. The parent CookieCode `./cookiecode build opencode` targets the main checkout, not arbitrary worktrees.
-- The single-binary build may repair optional native packages and emit noisy Vite warnings. After every build, check `git status --short` and package or lockfile diffs before staging.
+- For tool-surface/context-budget work, start with `packages/opencode/src/tool/registry.ts`, `packages/opencode/src/session/tools.ts`, `packages/opencode/src/tool/json-schema.ts`, and the relevant `packages/opencode/src/tool/*.ts` or `*.txt` files.
+- Experimental tool behavior is opt-in via `RuntimeFlags`. Add tests proving both default and experimental registries.
+- Tool param/description changes need `packages/opencode/test/tool/parameters.test.ts` coverage. Regenerate snapshots: `bun test -u test/tool/parameters.test.ts` from `packages/opencode`. Never hand-edit generated snapshot bodies.
 
-## Commits and PR Titles
+### Tool Compaction Pipeline
 
-Use conventional commit-style messages and PR titles: `type(scope): summary`.
+Tool schema flow: **Effect Schema** → `ToolJsonSchema.fromSchema()` in `json-schema.ts` → `stripSchema()` strips noise → `compactJsonSchema()` → AI SDK `tool()`. When `experimentalCompactTools` is on, `session/tools.ts` strips schemas and swaps descriptions from `compactDescriptions` in `registry.ts`.
 
-Valid types are `feat`, `fix`, `docs`, `chore`, `refactor`, and `test`. Scopes are optional; use the affected package or area when helpful, e.g. `core`, `opencode`, `tui`, `app`, `desktop`, `sdk`, or `plugin`.
+**`stripSchema()` (~line 493):** Recursively filters JSON Schema keys. Strips `"$schema"` and `"title"` only. **DO NOT add `"description"` to the strip filter** — it was previously stripped, which removed per-parameter guidance and caused Qwen 3.6 27B GGUF to loop with `SchemaError(Missing key at ["description"])` on bash. Local models depend on parameter descriptions.
 
-Examples: `fix(tui): simplify thinking toggle styling`, `docs: update contributing guide`, `chore(sdk): regenerate types`.
+**`compactDescriptions` (~line 65 of `registry.ts`):** 23 entries, one per builtin. Format: `<purpose>. Required: <param (purpose)>. Optional: <param (default)>.` Shell tool's `description` param is the critical example: `"5-10 word summary of the command's purpose. E.g. 'List files in current directory'"`.
+
+**Pipeline files:**
+- `registry.ts` — compactDescriptions, stripSchema, tool registration
+- `session/tools.ts` — applies compaction (lines 74-82)
+- `json-schema.ts` — `fromSchema()`, `fromTool()`, `compactJsonSchema()`
+- `tool/bash/prompt.ts` — full bash param annotations
+- `tool/shell/shell.txt` — full bash description template
+
+**Local LLM warning:** Small/quantized models (Qwen 3.6 27B Q6, etc.) break on missing descriptions that API models tolerate. Test compaction changes against at least one local model.
+
+## Build & Binary
+
+- Single-binary build: `bun run ./packages/opencode/script/build.ts --single` from the worktree. The parent `./cookiecode build opencode` targets the main checkout, not arbitrary worktrees.
+- The build may repair optional native packages and emit Vite warnings. Check `git status --short` and lockfile diffs before staging.
+
+## Commits & PRs
+
+Conventional: `type(scope): summary`. Types: `feat`, `fix`, `docs`, `chore`, `refactor`, `test`. Scopes: `core`, `opencode`, `tui`, `app`, `desktop`, `sdk`, `plugin`.
 
 ## Style Guide
 
-### General Principles
+### General
 
-- Keep things in one function unless composable or reusable
-- Do not extract single-use helpers preemptively. Inline the logic at the call site unless the helper is reused, hides a genuinely complex boundary, or has a clear independent name that improves the caller.
-- Avoid `try`/`catch` where possible
-- Avoid using the `any` type
-- Use Bun APIs when possible, like `Bun.file()`
-- Rely on type inference when possible; avoid explicit type annotations or interfaces unless necessary for exports or clarity
-- Prefer functional array methods (flatMap, filter, map) over for loops; use type guards on filter to maintain type inference downstream
-- In `src/config`, follow the existing self-export pattern at the top of the file (for example `export * as ConfigAgent from "./agent"`) when adding a new config module.
-
-Reduce total variable count by inlining when a value is only used once.
+- One function unless composable/reusable. Don't extract single-use helpers.
+- No `try/catch` unless unavoidable. No `any`.
+- Inline single-use values. Use `const`, ternaries, early returns.
+- Prefer `Bun.file()`, type inference, functional methods (`flatMap`/`filter`/`map`) with type guards.
+- `src/config`: use self-export pattern (`export * as ConfigAgent from "./agent"`).
+- Destructure sparingly: `obj.a` > `const { a } = obj`.
+- Comments: explain surprising behavior, not obvious code.
 
 ```ts
-// Good
+// Good — inline
 const journal = await Bun.file(path.join(dir, "journal.json")).json()
-
-// Bad
-const journalPath = path.join(dir, "journal.json")
-const journal = await Bun.file(journalPath).json()
 ```
 
-### Destructuring
-
-Avoid unnecessary destructuring. Use dot notation to preserve context.
-
 ```ts
-// Good
+// Good — no destructure
 obj.a
 obj.b
-
-// Bad
-const { a, b } = obj
 ```
 
-### Variables
-
-Prefer `const` over `let`. Use ternaries or early returns instead of reassignment.
-
 ```ts
-// Good
+// Good — ternaries
 const foo = condition ? 1 : 2
-
-// Bad
-let foo
-if (condition) foo = 1
-else foo = 2
 ```
 
-### Control Flow
-
-Avoid `else` statements. Prefer early returns.
-
 ```ts
-// Good
+// Good — early return
 function foo() {
   if (condition) return 1
   return 2
 }
-
-// Bad
-function foo() {
-  if (condition) return 1
-  else return 2
-}
 ```
 
-### Complex Logic
+### Helpers
 
-When a function has several validation branches or supporting details, make the main function read as the happy path and move supporting details into small helpers below it.
+Happy path on top, helpers below. Extract only when naming a real concept (`requireConfig`, `readMetadata`). Don't return `Effect` from sync helpers. Prefer `Schema.UnknownFromJsonString` / `Schema.decodeUnknownOption` over manual `JSON.parse` + `Effect.try`.
 
 ```ts
-// Good
 export function loadThing(input: unknown) {
   const config = requireConfig(input)
   const metadata = readMetadata(input)
   return createThing({ config, metadata })
 }
-
-function requireConfig(input: unknown) {
-  ...
-}
 ```
 
-- Keep helpers close to the code they support, below the main export when that improves readability.
-- Do not over-abstract simple expressions into many single-use helpers; extract only when it names a real concept like `requireConfig` or `readMetadata`.
-- Do not return `Effect` from helpers unless they actually perform effectful work. Synchronous parsing, validation, and option building should stay synchronous.
-- Prefer Effect schema helpers such as `Schema.UnknownFromJsonString` and `Schema.decodeUnknownOption` over manual `JSON.parse` wrapped in `Effect.try` when parsing untrusted JSON strings.
-- Add comments for non-obvious constraints and surprising behavior, not for obvious assignments or control flow.
+### Drizzle Schemas
 
-### Schema Definitions (Drizzle)
-
-Use snake_case for field names so column names don't need to be redefined as strings.
+Use `snake_case` field names — avoids string column redefinitions.
 
 ```ts
 // Good
@@ -121,21 +92,13 @@ const table = sqliteTable("session", {
   project_id: text().notNull(),
   created_at: integer().notNull(),
 })
-
-// Bad
-const table = sqliteTable("session", {
-  id: text("id").primaryKey(),
-  projectID: text("project_id").notNull(),
-  createdAt: integer("created_at").notNull(),
-})
 ```
 
 ## Testing
 
-- Avoid mocks as much as possible
-- Test actual implementation, do not duplicate logic into tests
-- Tests cannot run from repo root (guard: `do-not-run-tests-from-root`); run from package dirs like `packages/opencode`.
+- Avoid mocks. Test real implementation — don't duplicate logic.
+- Tests must run from package dir (e.g. `packages/opencode`), not repo root.
 
 ## Type Checking
 
-- Always run `bun typecheck` from package directories (e.g., `packages/opencode`), never `tsc` directly.
+- `bun typecheck` from package dirs, never `tsc` directly.
