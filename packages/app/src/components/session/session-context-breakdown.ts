@@ -9,9 +9,52 @@ export type SessionContextBreakdownSegment = {
   percent: number
 }
 
+export type DetailedBreakdownKey =
+  | "system_prompt"
+  | "tool_definitions"
+  | "user_messages"
+  | "assistant_messages"
+  | "tool_results"
+  | "overhead"
+
+export type DetailedBreakdownSegment = {
+  key: DetailedBreakdownKey
+  tokens: number
+  percent: number
+}
+
 const estimateTokens = (chars: number) => Math.ceil(chars / 4)
 const toPercent = (tokens: number, input: number) => (tokens / input) * 100
 const toPercentLabel = (tokens: number, input: number) => Math.round(toPercent(tokens, input) * 10) / 10
+
+/** Approximate JSON schema character counts for built-in tools.
+ *  Used to estimate token consumption of tool definitions sent to the LLM. */
+const TOOL_SCHEMA_ESTIMATES: Record<string, number> = {
+  shell: 2000,
+  bash: 2000,
+  read: 900,
+  write: 800,
+  edit: 1400,
+  patch: 1200,
+  grep: 1100,
+  glob: 700,
+  task: 1700,
+  webfetch: 900,
+  websearch: 900,
+  todowrite: 1500,
+  question: 1300,
+  semanticsearch: 800,
+  skill: 600,
+  lsp: 1600,
+  repoclone: 700,
+  repooverview: 600,
+  projectdossier: 500,
+  viewoutline: 800,
+  planexit: 300,
+  applypatch: 700,
+  invalid: 200,
+}
+const DEFAULT_SCHEMA_CHARS = 700
 
 const charsFromUserPart = (part: Part) => {
   if (part.type === "text") return part.text.length
@@ -129,4 +172,62 @@ export function estimateSessionContextBreakdown(args: {
   }
   const total = scaled.system + scaled.user + scaled.assistant + scaled.tool
   return build({ ...scaled, other: Math.max(0, args.input - total) }, args.input)
+}
+
+export function estimateToolDefinitionTokens(tools: Record<string, boolean> | undefined): number {
+  if (!tools) return 0
+  let chars = 0
+  for (const [name, enabled] of Object.entries(tools)) {
+    if (!enabled) continue
+    chars += TOOL_SCHEMA_ESTIMATES[name.toLowerCase()] ?? DEFAULT_SCHEMA_CHARS
+  }
+  return estimateTokens(chars)
+}
+
+export function estimateDetailedContextBreakdown(args: {
+  messages: Message[]
+  parts: Record<string, Part[] | undefined>
+  input: number
+  systemPrompt?: string
+  tools?: Record<string, boolean>
+}): DetailedBreakdownSegment[] {
+  if (!args.input) return []
+
+  const systemPromptTokens = estimateTokens(args.systemPrompt?.length ?? 0)
+  const toolDefTokens = estimateToolDefinitionTokens(args.tools)
+
+  let userChars = 0
+  let assistantChars = 0
+  let toolResultChars = 0
+
+  for (const msg of args.messages) {
+    const parts = args.parts[msg.id] ?? []
+    if (msg.role === "user") {
+      userChars += parts.reduce((sum, p) => sum + charsFromUserPart(p), 0)
+    } else if (msg.role === "assistant") {
+      for (const part of parts) {
+        const counts = charsFromAssistantPart(part)
+        assistantChars += counts.assistant
+        toolResultChars += counts.tool
+      }
+    }
+  }
+
+  const userTokens = estimateTokens(userChars)
+  const assistantTokens = estimateTokens(assistantChars)
+  const toolResultTokens = estimateTokens(toolResultChars)
+
+  const allocated = systemPromptTokens + toolDefTokens + userTokens + assistantTokens + toolResultTokens
+  const overhead = Math.max(0, args.input - allocated)
+
+  const segments: DetailedBreakdownSegment[] = ([
+    { key: "system_prompt", tokens: systemPromptTokens, percent: toPercentLabel(systemPromptTokens, args.input) },
+    { key: "tool_definitions", tokens: toolDefTokens, percent: toPercentLabel(toolDefTokens, args.input) },
+    { key: "user_messages", tokens: userTokens, percent: toPercentLabel(userTokens, args.input) },
+    { key: "assistant_messages", tokens: assistantTokens, percent: toPercentLabel(assistantTokens, args.input) },
+    { key: "tool_results", tokens: toolResultTokens, percent: toPercentLabel(toolResultTokens, args.input) },
+    { key: "overhead", tokens: overhead, percent: toPercentLabel(overhead, args.input) },
+  ] satisfies DetailedBreakdownSegment[]).filter((s) => s.tokens > 0)
+
+  return segments
 }

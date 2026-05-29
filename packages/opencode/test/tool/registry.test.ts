@@ -270,10 +270,10 @@ describe("tool.registry", () => {
       const writePatch = tools.find((tool) => tool.id === "write_patch")
 
       expect(rg?.description).toBe(
-        "search/list via ripgrep. args: pattern,path?,mode=content|files,glob?,literal?,ignoreCase?,hidden?,max?.",
+        "Ripgrep search/list. Required: pattern (regex/glob). Optional: path (root, default cwd), mode=content|files, glob (file filter), literal (no regex), ignoreCase, hidden (show dotfiles), max (default 100).",
       )
       expect(writePatch?.description).toBe(
-        "edit exact. args: path,old,new,count?. old='' create/overwrite. fail unless count matches.",
+        "Exact string replace in file. Required: path, old (text to find; empty creates file), new (replacement). Optional: count (expected matches, default 1). Fails on count mismatch.",
       )
       expect(JSON.stringify(rg?.jsonSchema)).not.toContain("description")
       expect(JSON.stringify(writePatch?.jsonSchema)).not.toContain("description")
@@ -291,13 +291,13 @@ describe("tool.registry", () => {
       })
 
       expect(tools.find((tool) => tool.id === "project_dossier")?.description).toBe(
-        "repo dossier. no args. compact cwd/git/stack/scripts/entrypoints/deps.",
+        "Repo dossier. No params. Reports cwd, git, package mgr, scripts, entrypoints, deps.",
       )
       expect(tools.find((tool) => tool.id === "view_outline")?.description).toBe(
-        "source outline. args: path,maxSymbols?,includePrivate?. returns line kind name(signature).",
+        "Source file outline. Required: path. Optional: maxSymbols (default 120), includePrivate (default false). Returns [line, kind, name, signature].",
       )
       expect(tools.find((tool) => tool.id === "semantic_search")?.description).toBe(
-        "concept search. args: query,path?,max?,mode=auto|lexical|semantic. compact ranked spans.",
+        "Semantic codebase search. Required: query. Optional: path (default cwd), max (default 10), mode=auto|lexical|semantic. Returns scored spans.",
       )
     }),
   )

@@ -376,6 +376,14 @@ export const dict = {
   "context.breakdown.tool": "Tool Calls",
   "context.breakdown.other": "Other",
 
+  "context.breakdown.detail.systemPrompt": "System Prompt",
+  "context.breakdown.detail.toolDefinitions": "Tool Definitions",
+  "context.breakdown.detail.userMessages": "User Messages",
+  "context.breakdown.detail.assistantMessages": "Assistant Messages",
+  "context.breakdown.detail.toolResults": "Tool Results",
+  "context.breakdown.detail.overhead": "Overhead / Other",
+  "context.breakdown.detail.note": "Estimated from available data — not exact API token counts",
+
   "context.systemPrompt.title": "System Prompt",
   "context.rawMessages.title": "Raw messages",
 

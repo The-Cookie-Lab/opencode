@@ -15,7 +15,7 @@ import { useLanguage } from "@/context/language"
 import { useProviders } from "@/hooks/use-providers"
 import { useSessionLayout } from "@/pages/session/session-layout"
 import { getSessionContextMetrics } from "./session-context-metrics"
-import { estimateSessionContextBreakdown, type SessionContextBreakdownKey } from "./session-context-breakdown"
+import { estimateSessionContextBreakdown, estimateDetailedContextBreakdown, type SessionContextBreakdownKey, type DetailedBreakdownKey } from "./session-context-breakdown"
 import { createSessionContextFormatter } from "./session-context-format"
 
 const BREAKDOWN_COLOR: Record<SessionContextBreakdownKey, string> = {
@@ -26,11 +26,15 @@ const BREAKDOWN_COLOR: Record<SessionContextBreakdownKey, string> = {
   other: "var(--syntax-comment)",
 }
 
-function Stat(props: { label: string; value: JSX.Element }) {
+function Stat(props: { label: string; value: JSX.Element; indent?: boolean; muted?: boolean }) {
   return (
-    <div class="flex flex-col gap-1">
-      <div class="text-12-regular text-text-weak">{props.label}</div>
-      <div class="text-12-medium text-text-strong">{props.value}</div>
+    <div class="flex flex-col gap-1" classList={{ "pl-4": props.indent }}>
+      <div class={props.muted ? "text-11-regular text-text-weaker" : "text-12-regular text-text-weak"}>
+        {props.label}
+      </div>
+      <div class={props.muted ? "text-11-regular text-text-weaker" : "text-12-medium text-text-strong"}>
+        {props.value}
+      </div>
     </div>
   )
 }
@@ -196,7 +200,33 @@ export function SessionContextTab() {
     return language.t("context.breakdown.other")
   }
 
-  const stats = [
+  const enabledTools = createMemo(() => {
+    const msg = findLast(visibleUserMessages(), (m) => !!m.tools)
+    return msg?.tools
+  })
+
+  const detailedBreakdown = createMemo(
+    on(
+      () => [ctx()?.message.id, ctx()?.input, messages().length, systemPrompt(), enabledTools()],
+      () => {
+        const c = ctx()
+        if (!c?.input) return []
+        return estimateDetailedContextBreakdown({
+          messages: messages(),
+          parts: sync.data.part as Record<string, Part[] | undefined>,
+          input: c.input,
+          systemPrompt: systemPrompt(),
+          tools: enabledTools(),
+        })
+      },
+    ),
+  )
+
+  const detailLabel = (key: DetailedBreakdownKey) => {
+    return language.t(`context.breakdown.detail.${key}` as any)
+  }
+
+  const STATS = [
     { label: "context.stats.session", value: () => info()?.title ?? params.id ?? "—" },
     { label: "context.stats.messages", value: () => counts().all.toLocaleString(language.intl()) },
     { label: "context.stats.provider", value: providerLabel },
@@ -217,6 +247,9 @@ export function SessionContextTab() {
     { label: "context.stats.sessionCreated", value: () => formatter().time(info()?.time.created) },
     { label: "context.stats.lastActivity", value: () => formatter().time(ctx()?.message.time.created) },
   ] satisfies { label: string; value: () => JSX.Element }[]
+
+  const topStats = () => STATS.slice(0, 7)
+  const bottomStats = () => STATS.slice(7)
 
   let scroll: HTMLDivElement | undefined
   let frame: number | undefined
@@ -278,9 +311,33 @@ export function SessionContextTab() {
     >
       <div class="px-6 pt-4 pb-10 flex flex-col gap-10">
         <div class="grid grid-cols-1 @[32rem]:grid-cols-2 gap-4">
-          <For each={stats}>
+          <For each={topStats()}>
             {(stat) => <Stat label={language.t(stat.label as Parameters<typeof language.t>[0])} value={stat.value()} />}
           </For>
+          <Show when={detailedBreakdown().length > 0}>
+            <For each={detailedBreakdown()}>
+              {(segment) => (
+                <Stat
+                  indent
+                  muted
+                  label={detailLabel(segment.key)}
+                  value={
+                    <>
+                      {formatter().number(segment.tokens)} ({segment.percent.toLocaleString(language.intl())}%)
+                    </>
+                  }
+                />
+              )}
+            </For>
+          </Show>
+          <For each={bottomStats()}>
+            {(stat) => <Stat label={language.t(stat.label as Parameters<typeof language.t>[0])} value={stat.value()} />}
+          </For>
+          <Show when={detailedBreakdown().length > 0}>
+            <div class="pl-4 col-span-full text-10-regular text-text-weaker -mt-2">
+              {language.t("context.breakdown.detail.note")}
+            </div>
+          </Show>
         </div>
 
         <Show when={breakdown().length > 0}>

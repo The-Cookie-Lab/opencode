@@ -507,7 +507,7 @@ function stripSchema(value: unknown): unknown {
   if (typeof value !== "object" || value === null) return value
   return Object.fromEntries(
     Object.entries(value)
-      .filter(([key]) => key !== "$schema" && key !== "title")
+      .filter(([key]) => key !== "$schema" && key !== "title" && key !== "description")
       .map(([key, item]) => [key, stripSchema(item)]),
   )
 }
