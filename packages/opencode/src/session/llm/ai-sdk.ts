@@ -2,6 +2,9 @@ import { FinishReason, LLMEvent, ProviderMetadata, ToolResultValue } from "@open
 import { Effect, Schema } from "effect"
 import { type streamText } from "ai"
 import { errorMessage } from "@/util/error"
+import * as Log from "@opencode-ai/core/util/log"
+
+const log = Log.create({ service: "session.llm.ai-sdk" })
 
 type Result = Awaited<ReturnType<typeof streamText>>
 type AISDKEvent = Result["fullStream"] extends AsyncIterable<infer T> ? T : never
@@ -24,6 +27,42 @@ function finishReason(value: string | undefined): FinishReason {
 function providerMetadata(value: unknown): ProviderMetadata | undefined {
   if (value == null) return undefined
   return Schema.is(ProviderMetadata)(value) ? value : undefined
+}
+
+/**
+ * Inject `prompt_tokens_details` from the raw AI SDK usage object into
+ * provider metadata so `Session.getUsage()` can find it.  The AI SDK strips
+ * it from `providerMetadata` but preserves the full raw usage payload in
+ * `usage.raw` (via `convertOpenAICompatibleChatUsage` → `asLanguageModelUsage`).
+ */
+function enrichProviderMetadata(
+  usage: unknown,
+  providerMetadata: unknown,
+): ProviderMetadata | undefined {
+  const meta = (typeof providerMetadata === "object" && providerMetadata !== null
+    ? providerMetadata
+    : {}) as Record<string, unknown>
+  const raw = (usage as { raw?: { _prompt_segments?: unknown } } | undefined)?.raw
+  const segments = raw?._prompt_segments
+  log.info("ptd-debug enrich", {
+    usageType: typeof usage,
+    hasRaw: !!raw,
+    hasSegments: !!segments,
+    segmentsType: typeof segments,
+    segmentsKeys: segments && typeof segments === "object" ? Object.keys(segments as object) : [],
+    metaKeys: Object.keys(meta).slice(0, 5),
+  })
+  if (!segments || typeof segments !== "object" || Object.keys(segments as object).length === 0) {
+    return Schema.is(ProviderMetadata)(meta) ? meta : undefined
+  }
+  const keys = Object.keys(meta).filter((k) => k !== "__proto__")
+  const targetKey = keys.length > 0 ? keys[0] : "openai"
+  meta[targetKey] = {
+    ...(meta[targetKey] as Record<string, unknown>),
+    prompt_tokens_details: segments,
+  }
+  log.info("ptd-debug inject", { targetKey })
+  return Schema.is(ProviderMetadata)(meta) ? meta : undefined
 }
 
 function usage(value: unknown) {
@@ -69,15 +108,27 @@ export function toLLMEvents(
     case "start-step":
       return Effect.succeed([LLMEvent.stepStart({ index: state.step })])
 
-    case "finish-step":
+    case "finish-step": {
+      const usageRaw = (event.usage as any)?.raw
+      const segments = usageRaw?._prompt_segments
+      const rawKeys = usageRaw && typeof usageRaw === "object" ? Object.keys(usageRaw).slice(0, 12) : []
+      log.info("ptd-debug finish-step", {
+        usageKeys: Object.keys(event.usage || {}).slice(0, 10),
+        hasRaw: !!usageRaw,
+        rawKeys,
+        hasSegments: !!segments,
+        segmentsKeys: segments && typeof segments === "object" ? Object.keys(segments).slice(0, 10) : [],
+        providerMetaKeys: Object.keys((event as any).providerMetadata || {}).slice(0, 5),
+      })
       return Effect.sync(() => [
         LLMEvent.stepFinish({
           index: state.step++,
           reason: finishReason(event.finishReason),
           usage: usage(event.usage),
-          providerMetadata: providerMetadata(event.providerMetadata),
+          providerMetadata: enrichProviderMetadata(event.usage, event.providerMetadata),
         }),
       ])
+    }
 
     case "finish":
       return Effect.sync(() => {
@@ -85,7 +136,7 @@ export function toLLMEvents(
           LLMEvent.finish({
             reason: finishReason(event.finishReason),
             usage: usage(event.totalUsage),
-            providerMetadata: "providerMetadata" in event ? providerMetadata(event.providerMetadata) : undefined,
+            providerMetadata: enrichProviderMetadata(event.totalUsage, "providerMetadata" in event ? event.providerMetadata : undefined),
           }),
         ]
         // Reset so the adapter can be reused for a follow-up stream without leaking

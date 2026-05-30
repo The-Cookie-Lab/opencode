@@ -217,10 +217,7 @@ export function SessionContextTab() {
     return count
   })
 
-  const detailedBreakdown = createMemo(
-    on(
-      () => [ctx()?.message.id, ctx()?.input, messages().length, systemPrompt(), enabledTools(), partCount()],
-      () => {
+  const detailedBreakdown = createMemo(() => {
         const c = ctx()
         if (!c?.input) return []
 
@@ -249,8 +246,7 @@ export function SessionContextTab() {
           serverBreakdown,
         })
       },
-    ),
-  )
+    )
 
   const detailLabel = (key: DetailedBreakdownKey) => {
     return language.t(`context.breakdown.detail.${key}` as any)
