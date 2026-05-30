@@ -4,6 +4,7 @@
 ## High-ROI Agent Notes
 
 - For tool-surface/context-budget work, start with `packages/opencode/src/tool/registry.ts`, `packages/opencode/src/session/tools.ts`, `packages/opencode/src/tool/json-schema.ts`, and the relevant `packages/opencode/src/tool/*.ts` or `*.txt` files.
+- For token breakdown rendering, the pipeline is: `packages/llm/src/protocols/openai-chat.ts` (schema) → `packages/opencode/src/session/session.ts` (`getUsage()` extracts) → `packages/opencode/src/session/message-v2.ts` (StepFinishPart schema) → `packages/opencode/src/session/processor.ts` (stores) → `packages/app/src/components/session/session-context-tab.tsx` (reads) → `packages/app/src/components/session/session-context-breakdown.ts` (renders). See also `packages/llm/README.md` and `packages/web/src/content/docs/server.mdx`.
 - Experimental tool behavior is opt-in via `RuntimeFlags`. Add tests proving both default and experimental registries.
 - Tool param/description changes need `packages/opencode/test/tool/parameters.test.ts` coverage. Regenerate snapshots: `bun test -u test/tool/parameters.test.ts` from `packages/opencode`. Never hand-edit generated snapshot bodies.
 

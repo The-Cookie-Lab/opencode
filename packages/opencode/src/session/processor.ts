@@ -585,6 +585,7 @@ export const layer = Layer.effect(
               type: "step-finish",
               tokens: usage.tokens,
               cost: usage.cost,
+              promptTokensDetails: usage.promptTokensDetails,
             })
             yield* session.updateMessage(ctx.assistantMessage)
             if (ctx.snapshot) {

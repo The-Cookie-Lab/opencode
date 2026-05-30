@@ -90,6 +90,38 @@ LLM.request({
 
 Normalized cache usage is read back into `response.usage.cacheReadInputTokens` and `cacheWriteInputTokens` across every provider.
 
+## Token Breakdown
+
+When the backend provides `prompt_tokens_details` (e.g. the model-server gateway after tokenizing
+with the model's native tokenizer), the raw breakdown is preserved in
+`usage.providerMetadata.openai.prompt_tokens_details` on the `Usage` object. OpenCode extracts
+this into a typed shape for the session context tab.
+
+### Server-provided shape
+
+```ts
+interface ServerPromptTokensDetails {
+  messages: Array<{ role: string; tokens: number; cached: number }>
+  tools: Array<{ name: string; tokens: number }>
+  template_overhead: number
+  image_tokens: number
+}
+```
+
+### How it's used
+
+1. The OpenAI chat protocol schema parses `prompt_tokens_details` from the provider response,
+   preserving all fields in `Usage.providerMetadata.openai`.
+2. `getUsage()` (in `@opencode-ai/opencode`) extracts the breakdown into a normalized
+   `promptTokensDetails` field on the return value.
+3. The session processor stores it on the `StepFinishPart` so it persists in session state.
+4. The session context tab UI reads it and passes it to
+   `estimateDetailedContextBreakdown({ serverBreakdown })` for exact per-category display
+   (system prompt, tool definitions, user/assistant/tool messages, overhead).
+
+If the backend does not provide `prompt_tokens_details`, OpenCode falls back to a heuristic
+`ceil(chars / 4)` estimate.
+
 ## Providers
 
 Provider facades configure endpoint/auth/deployment details first, then expose model selectors that take only a model or deployment id. The selected model carries the executable route value used at runtime.

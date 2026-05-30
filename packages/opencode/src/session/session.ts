@@ -419,6 +419,36 @@ export const getUsage = (input: { model: Provider.Model; usage: Usage; metadata?
   }
 
   const contextTokens = inputTokens
+
+  // Extract server-provided prompt token breakdown from provider metadata.
+  // The model-server gateway injects {messages, tools, template_overhead, image_tokens}
+  // into the OpenAI prompt_tokens_details shape, stored here by mapUsage().
+  const rawDetails = input.metadata?.openai?.prompt_tokens_details as Record<string, unknown> | undefined
+  const promptTokensDetails =
+    rawDetails &&
+    (Array.isArray(rawDetails.messages) ||
+      Array.isArray(rawDetails.tools) ||
+      typeof rawDetails.template_overhead === "number" ||
+      typeof rawDetails.image_tokens === "number")
+      ? {
+          messages: (Array.isArray(rawDetails.messages) ? rawDetails.messages : []) as {
+            role: string
+            tokens: number
+            cached?: number
+          }[],
+          tools: (Array.isArray(rawDetails.tools) ? rawDetails.tools : []) as {
+            name: string
+            tokens: number
+          }[],
+          template_overhead: (typeof rawDetails.template_overhead === "number"
+            ? rawDetails.template_overhead
+            : 0) as number,
+          image_tokens: (typeof rawDetails.image_tokens === "number"
+            ? rawDetails.image_tokens
+            : 0) as number,
+        }
+      : undefined
+
   const costInfo =
     input.model.cost?.tiers
       ?.filter((item) => item.tier.type === "context" && contextTokens > item.tier.size)
@@ -439,6 +469,7 @@ export const getUsage = (input: { model: Provider.Model; usage: Usage; metadata?
         .toNumber(),
     ),
     tokens,
+    promptTokensDetails,
   }
 }
 

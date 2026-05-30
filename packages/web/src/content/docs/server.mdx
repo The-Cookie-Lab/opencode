@@ -181,6 +181,46 @@ The opencode server exposes the following APIs.
 
 ---
 
+### Token Breakdown in `StepFinishPart`
+
+When a model backend provides `prompt_tokens_details` (e.g. the model-server gateway with
+a local tokenizer), each assistant message's `StepFinishPart` includes a `promptTokensDetails`
+field with exact per-category token counts:
+
+```ts
+// Shape of promptTokensDetails on StepFinishPart
+{
+  messages: Array<{
+    role: "system" | "user" | "assistant" | "tool"
+    tokens: number
+    cached: number  // tokens served from KV-cache
+  }>
+  tools: Array<{
+    name: string   // e.g. "read", "write", "grep"
+    tokens: number
+  }>
+  template_overhead: number  // chat template boilerplate tokens
+  image_tokens: number       // 256 tokens/image by default
+}
+```
+
+These fields power the context-tab token breakdown visualization in the TUI. When the
+backend does not provide this data, OpenCode falls back to a character-based
+`ceil(chars / 4)` heuristic estimate.
+
+### Data Flow
+
+```
+Model backend response
+  └─ usage.prompt_tokens_details   (raw provider JSON)
+      └─ providerMetadata.openai   (preserved by OpenAI chat protocol)
+          └─ getUsage()            (extracts → promptTokensDetails)
+              └─ StepFinishPart    (persisted in session state)
+                  └─ context-tab   (renders per-category breakdown)
+```
+
+---
+
 ### Commands
 
 | Method | Path       | Description       | Response                                      |

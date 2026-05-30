@@ -104,6 +104,25 @@ const OpenAIChatUsage = Schema.Struct({
   prompt_tokens_details: optionalNull(
     Schema.Struct({
       cached_tokens: Schema.optional(Schema.Number),
+      messages: Schema.optional(
+        Schema.Array(
+          Schema.Struct({
+            role: Schema.String,
+            tokens: Schema.Number,
+            cached: Schema.optional(Schema.Number),
+          }),
+        ),
+      ),
+      tools: Schema.optional(
+        Schema.Array(
+          Schema.Struct({
+            name: Schema.String,
+            tokens: Schema.Number,
+          }),
+        ),
+      ),
+      template_overhead: Schema.optional(Schema.Number),
+      image_tokens: Schema.optional(Schema.Number),
     }),
   ),
   completion_tokens_details: optionalNull(

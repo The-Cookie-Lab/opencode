@@ -211,12 +211,30 @@ export function SessionContextTab() {
       () => {
         const c = ctx()
         if (!c?.input) return []
+
+        // Extract server-provided token breakdown from the last step-finish part
+        let serverBreakdown: Parameters<typeof estimateDetailedContextBreakdown>[0]["serverBreakdown"]
+        const parts = sync.data.part as Record<string, Part[] | undefined>
+        for (const messageId of Object.keys(parts)) {
+          const messageParts = parts[messageId]
+          if (!messageParts) continue
+          // Walk backwards to find the most recent step-finish with server details
+          for (let i = messageParts.length - 1; i >= 0; i--) {
+            const p = messageParts[i] as any
+            if (p.type === "step-finish" && p.promptTokensDetails) {
+              serverBreakdown = p.promptTokensDetails
+              break
+            }
+          }
+        }
+
         return estimateDetailedContextBreakdown({
           messages: messages(),
           parts: sync.data.part as Record<string, Part[] | undefined>,
           input: c.input,
           systemPrompt: systemPrompt(),
           tools: enabledTools(),
+          serverBreakdown,
         })
       },
     ),
