@@ -376,11 +376,11 @@ export const dict = {
   "context.breakdown.tool": "Tool Calls",
   "context.breakdown.other": "Other",
 
-  "context.breakdown.detail.systemPrompt": "System Prompt",
-  "context.breakdown.detail.toolDefinitions": "Tool Definitions",
-  "context.breakdown.detail.userMessages": "User Messages",
-  "context.breakdown.detail.assistantMessages": "Assistant Messages",
-  "context.breakdown.detail.toolResults": "Tool Results",
+  "context.breakdown.detail.system_prompt": "System Prompt",
+  "context.breakdown.detail.tool_definitions": "Tool Definitions",
+  "context.breakdown.detail.user_messages": "User Messages",
+  "context.breakdown.detail.assistant_messages": "Assistant Messages",
+  "context.breakdown.detail.tool_results": "Tool Results",
   "context.breakdown.detail.overhead": "Overhead / Other",
   "context.breakdown.detail.note": "Estimated from available data — not exact API token counts",
 

@@ -423,7 +423,10 @@ export const getUsage = (input: { model: Provider.Model; usage: Usage; metadata?
   // Extract server-provided prompt token breakdown from provider metadata.
   // The model-server gateway injects {messages, tools, template_overhead, image_tokens}
   // into the OpenAI prompt_tokens_details shape, stored here by mapUsage().
-  const rawDetails = input.metadata?.openai?.prompt_tokens_details as Record<string, unknown> | undefined
+  // Fall back to usage.providerMetadata when the event-level providerMetadata is
+  // missing (protocols that don't pass providerMetadata to Lifecycle.finish).
+  const rawDetails = (input.metadata?.openai?.prompt_tokens_details ??
+    input.usage?.providerMetadata?.openai?.prompt_tokens_details) as Record<string, unknown> | undefined
   const promptTokensDetails =
     rawDetails &&
     (Array.isArray(rawDetails.messages) ||

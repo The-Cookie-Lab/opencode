@@ -329,6 +329,7 @@ const finish = (state: ParserState): ReadonlyArray<LLMEvent> =>
         Lifecycle.finish(state.lifecycle, events, {
           reason: mapFinishReason(state.finishReason, state.hasToolCalls),
           usage: state.usage,
+          providerMetadata: state.usage?.providerMetadata,
         })
         return events
       })()

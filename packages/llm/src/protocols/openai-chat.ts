@@ -388,7 +388,7 @@ const finishEvents = (state: ParserState): ReadonlyArray<LLMEvent> => {
   const reason = state.finishReason === "stop" && hasToolCalls ? "tool-calls" : state.finishReason
   const lifecycle = state.toolCallEvents.length ? Lifecycle.stepStart(state.lifecycle, events) : state.lifecycle
   events.push(...state.toolCallEvents)
-  if (reason) Lifecycle.finish(lifecycle, events, { reason, usage: state.usage })
+  if (reason) Lifecycle.finish(lifecycle, events, { reason, usage: state.usage, providerMetadata: state.usage?.providerMetadata })
   return events
 }
 

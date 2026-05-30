@@ -566,6 +566,7 @@ const onHalt = (state: ParserState): ReadonlyArray<LLMEvent> =>
           reason:
             state.pendingFinish.reason === "stop" && state.hasToolCalls ? "tool-calls" : state.pendingFinish.reason,
           usage: state.pendingFinish.usage,
+          providerMetadata: state.pendingFinish.usage?.providerMetadata,
         })
         return events
       })()

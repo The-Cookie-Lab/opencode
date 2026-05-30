@@ -4,7 +4,14 @@
 ## High-ROI Agent Notes
 
 - For tool-surface/context-budget work, start with `packages/opencode/src/tool/registry.ts`, `packages/opencode/src/session/tools.ts`, `packages/opencode/src/tool/json-schema.ts`, and the relevant `packages/opencode/src/tool/*.ts` or `*.txt` files.
-- For token breakdown rendering, the pipeline is: `packages/llm/src/protocols/openai-chat.ts` (schema) → `packages/opencode/src/session/session.ts` (`getUsage()` extracts) → `packages/opencode/src/session/message-v2.ts` (StepFinishPart schema) → `packages/opencode/src/session/processor.ts` (stores) → `packages/app/src/components/session/session-context-tab.tsx` (reads) → `packages/app/src/components/session/session-context-breakdown.ts` (renders). See also `packages/llm/README.md` and `packages/web/src/content/docs/server.mdx`.
+- For token breakdown rendering, the pipeline is:
+  1. Model-server response → `mapUsage()` stores `prompt_tokens_details` in `Usage.providerMetadata.openai`
+  2. Protocol adapters (`openai-chat.ts`, `gemini.ts`, `bedrock-converse.ts`, `anthropic-messages.ts`) pass `state.usage?.providerMetadata` to `Lifecycle.finish()` → emitted as `providerMetadata` on the `step-finish` event
+  3. `processor.ts` reads `value.providerMetadata` and passes it as `metadata` to `Session.getUsage()`
+  4. `session.ts` (`getUsage()`) extracts `promptTokensDetails` with a defense-in-depth fallback: primary path reads `input.metadata?.openai?.prompt_tokens_details` (from the `step-finish` event), fallback reads `input.usage?.providerMetadata?.openai?.prompt_tokens_details` (from the `Usage` object directly)
+  5. `message-v2.ts` (StepFinishPart schema) defines the `promptTokensDetails` field
+  6. `session-context-tab.tsx` (reads) → `session-context-breakdown.ts` (renders)
+  See also `packages/llm/README.md` and `packages/web/src/content/docs/server.mdx`.
 - Experimental tool behavior is opt-in via `RuntimeFlags`. Add tests proving both default and experimental registries.
 - Tool param/description changes need `packages/opencode/test/tool/parameters.test.ts` coverage. Regenerate snapshots: `bun test -u test/tool/parameters.test.ts` from `packages/opencode`. Never hand-edit generated snapshot bodies.
 
