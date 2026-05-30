@@ -9,8 +9,9 @@
   2. Protocol adapters (`openai-chat.ts`, `gemini.ts`, `bedrock-converse.ts`, `anthropic-messages.ts`) pass `state.usage?.providerMetadata` to `Lifecycle.finish()` → emitted as `providerMetadata` on the `step-finish` event
   3. `processor.ts` reads `value.providerMetadata` and passes it as `metadata` to `Session.getUsage()`
   4. `session.ts` (`getUsage()`) extracts `promptTokensDetails` with a defense-in-depth fallback: primary path reads `input.metadata?.openai?.prompt_tokens_details` (from the `step-finish` event), fallback reads `input.usage?.providerMetadata?.openai?.prompt_tokens_details` (from the `Usage` object directly)
-  5. `message-v2.ts` (StepFinishPart schema) defines the `promptTokensDetails` field
-  6. `session-context-tab.tsx` (reads) → `session-context-breakdown.ts` (renders)
+  5. `message-v2.ts` (StepFinishPart schema) defines the `promptTokensDetails` field on the part
+  6. Server → client sync: `step-finish` parts must survive the `SKIP_PARTS` filter. Both the real-time event path (`event-reducer.ts`) and initial load path (`directory-sync.ts`) gate parts through `SKIP_PARTS` — **step-finish must NOT be in this set** or `promptTokensDetails` is silently dropped before the UI sees it. Regression tests in `event-reducer.test.ts` and `directory-sync.test.ts`.
+  7. `session-context-tab.tsx` (reads parts from sync store) → `session-context-breakdown.ts` (renders)
   See also `packages/llm/README.md` and `packages/web/src/content/docs/server.mdx`.
 - Experimental tool behavior is opt-in via `RuntimeFlags`. Add tests proving both default and experimental registries.
 - Tool param/description changes need `packages/opencode/test/tool/parameters.test.ts` coverage. Regenerate snapshots: `bun test -u test/tool/parameters.test.ts` from `packages/opencode`. Never hand-edit generated snapshot bodies.
@@ -21,7 +22,7 @@ Tool schema flow: **Effect Schema** → `ToolJsonSchema.fromSchema()` in `json-s
 
 **`stripSchema()` (~line 493):** Recursively filters JSON Schema keys. Strips `"$schema"` and `"title"` only. **DO NOT add `"description"` to the strip filter** — it was previously stripped, which removed per-parameter guidance and caused Qwen 3.6 27B GGUF to loop with `SchemaError(Missing key at ["description"])` on bash. Local models depend on parameter descriptions.
 
-**`compactDescriptions` (~line 65 of `registry.ts`):** 23 entries, one per builtin. Format: `<purpose>. Required: <param (purpose)>. Optional: <param (default)>.` Shell tool's `description` param is the critical example: `"5-10 word summary of the command's purpose. E.g. 'List files in current directory'"`.
+**`compactDescriptions` (~line 65 of `registry.ts`):** 23 entries, one per builtin. Format: `<purpose>. Required: <param (purpose)>. Optional: <param (default)>.` Shell tool's `description` param goes FIRST in Required since local LLMs miss it otherwise: `"5-10 word summary of what the command does — e.g. 'List files in current directory'"`.
 
 **Pipeline files:**
 - `registry.ts` — compactDescriptions, stripSchema, tool registration

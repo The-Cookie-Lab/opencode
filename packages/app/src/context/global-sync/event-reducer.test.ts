@@ -34,6 +34,47 @@ const textPart = (id: string, sessionID: string, messageID: string) =>
     text: id,
   }) as Part
 
+const stepFinishPart = (
+  id: string,
+  sessionID: string,
+  messageID: string,
+  overrides?: Partial<Record<string, unknown>>,
+) =>
+  ({
+    id,
+    sessionID,
+    messageID,
+    type: "step-finish",
+    reason: "stop",
+    cost: 0,
+    tokens: { input: 100, output: 50, reasoning: 0, cache: { read: 0, write: 0 } },
+    promptTokensDetails: {
+      messages: [{ role: "system", tokens: 20 }],
+      tools: [{ name: "read", tokens: 10 }],
+      template_overhead: 5,
+      image_tokens: 0,
+    },
+    ...overrides,
+  }) as Part
+
+const stepStartPart = (id: string, sessionID: string, messageID: string) =>
+  ({
+    id,
+    sessionID,
+    messageID,
+    type: "step-start",
+  }) as Part
+
+const patchPart = (id: string, sessionID: string, messageID: string) =>
+  ({
+    id,
+    sessionID,
+    messageID,
+    type: "patch",
+    hash: "abc123",
+    files: ["foo.ts"],
+  }) as Part
+
 const permissionRequest = (id: string, sessionID: string, title = id) =>
   ({
     id,
@@ -551,5 +592,66 @@ describe("applyDirectoryEvent", () => {
 
     expect(pushes).toEqual(["/tmp"])
     expect(lspLoads).toBe(1)
+  })
+
+  test("stores step-finish parts with promptTokensDetails (regression: step-finish was in SKIP_PARTS)", () => {
+    const sessionID = "ses_1"
+    const messageID = "msg_1"
+    const [store, setStore] = createStore(baseState())
+
+    applyDirectoryEvent({
+      event: { type: "message.part.updated", properties: { part: stepFinishPart("prt_sf", sessionID, messageID) } },
+      store,
+      setStore,
+      push() {},
+      directory: "/tmp",
+      loadLsp() {},
+    })
+
+    const parts = store.part[messageID]
+    expect(parts).toBeDefined()
+    expect(parts!.length).toBe(1)
+    expect(parts![0].type).toBe("step-finish")
+    // Verify promptTokensDetails survived the round-trip
+    const details = (parts![0] as any).promptTokensDetails
+    expect(details).toBeDefined()
+    expect(details.messages[0].role).toBe("system")
+    expect(details.messages[0].tokens).toBe(20)
+    expect(details.tools[0].name).toBe("read")
+    expect(details.template_overhead).toBe(5)
+  })
+
+  test("still skips patch parts in message.part.updated", () => {
+    const sessionID = "ses_1"
+    const messageID = "msg_1"
+    const [store, setStore] = createStore(baseState())
+
+    applyDirectoryEvent({
+      event: { type: "message.part.updated", properties: { part: patchPart("prt_p", sessionID, messageID) } },
+      store,
+      setStore,
+      push() {},
+      directory: "/tmp",
+      loadLsp() {},
+    })
+
+    expect(store.part[messageID]).toBeUndefined()
+  })
+
+  test("still skips step-start parts in message.part.updated", () => {
+    const sessionID = "ses_1"
+    const messageID = "msg_1"
+    const [store, setStore] = createStore(baseState())
+
+    applyDirectoryEvent({
+      event: { type: "message.part.updated", properties: { part: stepStartPart("prt_ss", sessionID, messageID) } },
+      store,
+      setStore,
+      push() {},
+      directory: "/tmp",
+      loadLsp() {},
+    })
+
+    expect(store.part[messageID]).toBeUndefined()
   })
 })

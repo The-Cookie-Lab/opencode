@@ -67,7 +67,7 @@ const compactDescriptions = {
   [QuestionTool.id]:
     "Ask user. Required: questions[{header, question, options?}]. Only when blocked or unclear.",
   [ShellTool.id]:
-    "Run shell command. For git/npm/docker/builds/tests. NOT for file ops. Required: command, description (5-10 word summary of the command's purpose. E.g. 'List files in current directory'). Optional: timeout (ms), workdir (use instead of cd).",
+    "Run shell command. For git/npm/docker/builds/tests. NOT for file ops. Required: description (5-10 word summary of what the command does — e.g. 'List files in current directory'), command. Optional: timeout (ms), workdir (use instead of cd).",
   [ReadTool.id]:
     "Read file or list dir. Required: filePath (absolute). Optional: offset (start line, 1-indexed), limit (max lines, default 2000). Returns numbered lines. Reads images/PDFs.",
   [RgTool.id]:
@@ -507,7 +507,14 @@ function stripSchema(value: unknown): unknown {
   if (typeof value !== "object" || value === null) return value
   return Object.fromEntries(
     Object.entries(value)
-      .filter(([key]) => key !== "$schema" && key !== "title" && key !== "description")
+      .filter(([key, parent]) => {
+        if (key === "$schema" || key === "title") return false
+        // Keep the description field for the top-level tool description (tool identity)
+        // and for the `description` parameter itself so local LLMs see
+        // guidance/examples inline.
+        if (key === "description" && typeof parent === "string") return true
+        return true
+      })
       .map(([key, item]) => [key, stripSchema(item)]),
   )
 }

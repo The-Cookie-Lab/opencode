@@ -14,7 +14,7 @@ import { SESSION_CACHE_LIMIT, dropSessionCaches, pickSessionCacheEvictions } fro
 import { diffs as list, message as clean } from "@/utils/diffs"
 import { useServerSDK } from "./server-sdk"
 
-const SKIP_PARTS = new Set(["patch", "step-start", "step-finish"])
+export const SKIP_PARTS = new Set(["patch", "step-start"])
 
 function sortParts(parts: Part[]) {
   return parts.filter((part) => !!part?.id).sort((a, b) => cmp(a.id, b.id))

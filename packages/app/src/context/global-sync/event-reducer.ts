@@ -16,7 +16,7 @@ import { trimSessions } from "./session-trim"
 import { dropSessionCaches } from "./session-cache"
 import { diffs as list, message as clean } from "@/utils/diffs"
 
-const SKIP_PARTS = new Set(["patch", "step-start", "step-finish"])
+const SKIP_PARTS = new Set(["patch", "step-start"])
 
 export function applyGlobalEvent(input: {
   event: { type: string; properties?: unknown }
