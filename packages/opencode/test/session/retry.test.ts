@@ -124,6 +124,27 @@ describe("session.retry.retryable", () => {
     expect(SessionRetry.retryable(error, retryProvider)).toEqual({ message: "Too Many Requests" })
   })
 
+  test("maps lane_blocked error code at top level", () => {
+    const error = wrap(JSON.stringify({ code: "lane_blocked" }))
+    expect(SessionRetry.retryable(error, retryProvider)).toEqual({ message: "Model lane blocked" })
+  })
+
+  test("maps lane_blocked error code nested in error object", () => {
+    const error = wrap(JSON.stringify({ error: { code: "lane_blocked" } }))
+    expect(SessionRetry.retryable(error, retryProvider)).toEqual({ message: "Model lane blocked" })
+  })
+
+  test("maps lane_blocked with custom gateway message", () => {
+    const error = wrap(
+      JSON.stringify({
+        error: { code: "lane_blocked", message: "model lane 'small' blocked: capacity full (2 active)" },
+      }),
+    )
+    expect(SessionRetry.retryable(error, retryProvider)).toEqual({
+      message: "model lane 'small' blocked: capacity full (2 active)",
+    })
+  })
+
   test("maps overloaded provider codes", () => {
     const error = wrap(JSON.stringify({ code: "resource_exhausted" }))
     expect(SessionRetry.retryable(error, retryProvider)).toEqual({ message: "Provider is overloaded" })
