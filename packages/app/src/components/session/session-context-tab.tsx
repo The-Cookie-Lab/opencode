@@ -178,7 +178,7 @@ export function SessionContextTab() {
 
   const breakdown = createMemo(
     on(
-      () => [ctx()?.message.id, ctx()?.input, messages().length, systemPrompt()],
+      () => [ctx()?.message.id, ctx()?.input, messages().length, systemPrompt(), partCount()],
       () => {
         const c = ctx()
         if (!c?.input) return []
@@ -205,9 +205,21 @@ export function SessionContextTab() {
     return msg?.tools
   })
 
+  // Track part count so the detailedBreakdown memo recomputes when a
+  // step-finish part (which carries promptTokensDetails) arrives after
+  // the parent message.
+  const partCount = createMemo(() => {
+    const parts = sync.data.part as Record<string, Part[] | undefined>
+    let count = 0
+    for (const key of Object.keys(parts)) {
+      count += parts[key]?.length ?? 0
+    }
+    return count
+  })
+
   const detailedBreakdown = createMemo(
     on(
-      () => [ctx()?.message.id, ctx()?.input, messages().length, systemPrompt(), enabledTools()],
+      () => [ctx()?.message.id, ctx()?.input, messages().length, systemPrompt(), enabledTools(), partCount()],
       () => {
         const c = ctx()
         if (!c?.input) return []
