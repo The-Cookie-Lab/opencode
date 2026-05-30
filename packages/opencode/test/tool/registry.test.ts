@@ -275,8 +275,19 @@ describe("tool.registry", () => {
       expect(writePatch?.description).toBe(
         "Exact string replace in file. Required: path, old (text to find; empty creates file), new (replacement). Optional: count (expected matches, default 1). Fails on count mismatch.",
       )
-      expect(JSON.stringify(rg?.jsonSchema)).not.toContain("description")
-      expect(JSON.stringify(writePatch?.jsonSchema)).not.toContain("description")
+      // $schema and title are still stripped; parameter descriptions are preserved so
+      // local LLMs get inline guidance for each field.
+      const rgJson = JSON.stringify(rg?.jsonSchema)
+      const wpJson = JSON.stringify(writePatch?.jsonSchema)
+      expect(rgJson).not.toContain("$schema")
+      expect(rgJson).not.toContain('"title"')
+      expect(wpJson).not.toContain("$schema")
+      expect(wpJson).not.toContain('"title"')
+      // Parameter descriptions must survive stripping.
+      expect(rgJson).toContain("regex or glob")
+      expect(rgJson).toContain("case-insensitive match")
+      expect(wpJson).toContain("file path")
+      expect(wpJson).toContain("replacement text")
     }),
   )
 
