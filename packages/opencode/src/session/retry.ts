@@ -141,6 +141,9 @@ export function retryable(error: Err, provider: string) {
   if (json.type === "error" && json.error?.type === "too_many_requests") {
     return { message: "Too Many Requests" }
   }
+  if (code === "lane_blocked" || json.error?.code === "lane_blocked") {
+    return { message: str(json.error?.message) || "Model lane blocked" }
+  }
   if (code.includes("exhausted") || code.includes("unavailable")) {
     return { message: "Provider is overloaded" }
   }
