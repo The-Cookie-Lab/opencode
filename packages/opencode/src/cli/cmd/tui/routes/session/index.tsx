@@ -1435,6 +1435,47 @@ function AssistantMessage(props: { message: AssistantMessage; parts: Part[]; las
 
   const childShortcut = useCommandShortcut("session.child.first")
 
+  const stepFinish = createMemo(() => {
+    return props.parts.find((p) => p.type === "step-finish") as
+      | (Part & { tokens: { input: number; output: number; reasoning: number }; promptTokensDetails?: any })
+      | undefined
+  })
+
+  const tokenBreakdown = createMemo(() => {
+    const sf = stepFinish()
+    if (!sf?.promptTokensDetails) return null
+    const ptd = sf.promptTokensDetails
+
+    const parts: string[] = []
+
+    // Input tokens
+    let inputStr = `${Locale.number(sf.tokens.input)}↑`
+    const cached = ptd.messages?.reduce((sum: number, m: { cached?: number }) => sum + (m.cached ?? 0), 0) ?? 0
+    if (cached > 0) inputStr += ` (${Locale.number(cached)}Δ)`
+    parts.push(inputStr)
+
+    // Output tokens
+    parts.push(`${Locale.number(sf.tokens.output)}↓`)
+
+    // Reasoning tokens
+    if (sf.tokens.reasoning > 0) {
+      parts.push(`${Locale.number(sf.tokens.reasoning)}⊕`)
+    }
+
+    // Tool tokens
+    if (ptd.tools?.length > 0) {
+      const toolTotal = ptd.tools.reduce((sum: number, t: { tokens: number }) => sum + t.tokens, 0)
+      parts.push(`tools ${Locale.number(toolTotal)}`)
+    }
+
+    // Overhead
+    if (ptd.template_overhead > 0) {
+      parts.push(`oh ${Locale.number(ptd.template_overhead)}`)
+    }
+
+    return `▸ ${parts.join(" · ")}`
+  })
+
   return (
     <>
       <For each={props.parts}>
@@ -1497,6 +1538,11 @@ function AssistantMessage(props: { message: AssistantMessage; parts: Part[]; las
                 <span style={{ fg: theme.textMuted }}> · interrupted</span>
               </Show>
             </text>
+            <Show when={tokenBreakdown()}>
+              <text>
+                <span style={{ fg: theme.textMuted }}>{tokenBreakdown()}</span>
+              </text>
+            </Show>
           </box>
         </Match>
       </Switch>

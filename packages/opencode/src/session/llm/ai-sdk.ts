@@ -44,14 +44,6 @@ function enrichProviderMetadata(
     : {}) as Record<string, unknown>
   const raw = (usage as { raw?: { _prompt_segments?: unknown } } | undefined)?.raw
   const segments = raw?._prompt_segments
-  log.info("ptd-debug enrich", {
-    usageType: typeof usage,
-    hasRaw: !!raw,
-    hasSegments: !!segments,
-    segmentsType: typeof segments,
-    segmentsKeys: segments && typeof segments === "object" ? Object.keys(segments as object) : [],
-    metaKeys: Object.keys(meta).slice(0, 5),
-  })
   if (!segments || typeof segments !== "object" || Object.keys(segments as object).length === 0) {
     return Schema.is(ProviderMetadata)(meta) ? meta : undefined
   }
@@ -61,7 +53,6 @@ function enrichProviderMetadata(
     ...(meta[targetKey] as Record<string, unknown>),
     prompt_tokens_details: segments,
   }
-  log.info("ptd-debug inject", { targetKey })
   return Schema.is(ProviderMetadata)(meta) ? meta : undefined
 }
 
@@ -109,17 +100,6 @@ export function toLLMEvents(
       return Effect.succeed([LLMEvent.stepStart({ index: state.step })])
 
     case "finish-step": {
-      const usageRaw = (event.usage as any)?.raw
-      const segments = usageRaw?._prompt_segments
-      const rawKeys = usageRaw && typeof usageRaw === "object" ? Object.keys(usageRaw).slice(0, 12) : []
-      log.info("ptd-debug finish-step", {
-        usageKeys: Object.keys(event.usage || {}).slice(0, 10),
-        hasRaw: !!usageRaw,
-        rawKeys,
-        hasSegments: !!segments,
-        segmentsKeys: segments && typeof segments === "object" ? Object.keys(segments).slice(0, 10) : [],
-        providerMetaKeys: Object.keys((event as any).providerMetadata || {}).slice(0, 5),
-      })
       return Effect.sync(() => [
         LLMEvent.stepFinish({
           index: state.step++,

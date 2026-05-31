@@ -434,11 +434,9 @@ export const getUsage = (input: { model: Provider.Model; usage: Usage; metadata?
     for (const key of metaKeys) {
       const ptd = (meta[key] as Record<string, unknown> | undefined)?.prompt_tokens_details
       if (ptd && typeof ptd === "object") {
-        log.info("ptd-debug getUsage", { label, metaKeys, foundKey: key, ptdKeys: Object.keys(ptd).slice(0, 8) })
         return ptd as Record<string, unknown>
       }
     }
-    log.info("ptd-debug getUsage", { label, metaKeys, foundKey: "(none)" })
     return undefined
   }
   const rawDetails = findPromptTokensDetails(input.metadata, "metadata") ?? findPromptTokensDetails(input.usage?.providerMetadata, "usage.providerMetadata")
@@ -466,12 +464,6 @@ export const getUsage = (input: { model: Provider.Model; usage: Usage; metadata?
             : 0) as number,
         }
       : undefined
-
-  log.info("ptd-debug getUsage result", {
-    hasRawDetails: !!rawDetails,
-    hasPtd: !!promptTokensDetails,
-    ptdKeys: promptTokensDetails ? Object.keys(promptTokensDetails) : [],
-  })
 
   const costInfo =
     input.model.cost?.tiers

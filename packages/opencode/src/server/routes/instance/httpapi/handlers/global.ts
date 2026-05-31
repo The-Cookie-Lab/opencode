@@ -36,9 +36,13 @@ function parseBody(body: string) {
 function eventResponse() {
   log.info("global event connected")
   const events = Stream.callback<GlobalBusEvent>((queue) => {
-    const handler = (event: GlobalBusEvent) => Queue.offerUnsafe(queue, event)
+    const handler = (event: GlobalBusEvent) => {
+      Queue.offerUnsafe(queue, event)
+    }
     return Effect.acquireRelease(
-      Effect.sync(() => GlobalBus.on("event", handler)),
+      Effect.sync(() => {
+        GlobalBus.on("event", handler)
+      }),
       () => Effect.sync(() => GlobalBus.off("event", handler)),
     )
   })
