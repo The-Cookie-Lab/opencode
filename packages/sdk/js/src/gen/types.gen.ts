@@ -329,6 +329,19 @@ export type StepFinishPart = {
       write: number
     }
   }
+  promptTokensDetails?: {
+    messages: Array<{
+      role: string
+      tokens: number
+      cached?: number
+    }>
+    tools: Array<{
+      name: string
+      tokens: number
+    }>
+    template_overhead: number
+    image_tokens: number
+  }
 }
 
 export type SnapshotPart = {

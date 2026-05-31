@@ -3,7 +3,6 @@ import { Effect, Schema } from "effect"
 import { type streamText } from "ai"
 import { errorMessage } from "@/util/error"
 import * as Log from "@opencode-ai/core/util/log"
-
 const log = Log.create({ service: "session.llm.ai-sdk" })
 
 type Result = Awaited<ReturnType<typeof streamText>>

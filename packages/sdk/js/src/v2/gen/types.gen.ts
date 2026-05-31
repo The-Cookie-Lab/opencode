@@ -666,6 +666,19 @@ export type StepFinishPart = {
       write: number
     }
   }
+  promptTokensDetails?: {
+    messages: Array<{
+      role: string
+      tokens: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+      cached?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+    }>
+    tools: Array<{
+      name: string
+      tokens: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+    }>
+    template_overhead: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+    image_tokens: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+  }
 }
 
 export type SnapshotPart = {
@@ -1969,6 +1982,39 @@ export type WorkspaceWarpError = {
 
 export type EffectHttpApiErrorForbidden = {
   _tag: "Forbidden"
+}
+
+export type StepFinishPart1 = {
+  id: string
+  sessionID: string
+  messageID: string
+  type: "step-finish"
+  reason: string
+  snapshot?: string
+  cost: number
+  tokens: {
+    total?: number
+    input: number
+    output: number
+    reasoning: number
+    cache: {
+      read: number
+      write: number
+    }
+  }
+  promptTokensDetails?: {
+    messages: Array<{
+      role: string
+      tokens: number | "NaN" | "Infinity" | "-Infinity"
+      cached?: number | "NaN" | "Infinity" | "-Infinity"
+    }>
+    tools: Array<{
+      name: string
+      tokens: number | "NaN" | "Infinity" | "-Infinity"
+    }>
+    template_overhead: number | "NaN" | "Infinity" | "-Infinity"
+    image_tokens: number | "NaN" | "Infinity" | "-Infinity"
+  }
 }
 
 export type SyncEventMessageUpdated = {
