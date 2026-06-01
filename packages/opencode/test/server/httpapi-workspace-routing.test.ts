@@ -1,6 +1,6 @@
 import { NodeHttpServer, NodeServices } from "@effect/platform-node"
 import { describe, expect } from "bun:test"
-import { Context, Effect, Layer, Queue, Ref, Schema } from "effect"
+import { Context, Effect, Layer, Queue, Ref, Schema, Stream } from "effect"
 import {
   FetchHttpClient,
   HttpClient,
@@ -16,10 +16,11 @@ import Http from "node:http"
 import { mkdir } from "node:fs/promises"
 import path from "node:path"
 import { registerAdapter } from "../../src/control-plane/adapters"
-import { WorkspaceID } from "../../src/control-plane/schema"
+import { WorkspaceV2 } from "@opencode-ai/core/workspace"
 import type { WorkspaceAdapter } from "../../src/control-plane/types"
 import { Workspace } from "../../src/control-plane/workspace"
-import { WorkspaceTable } from "../../src/control-plane/workspace.sql"
+import { WorkspaceTable } from "@opencode-ai/core/control-plane/workspace.sql"
+import { Database } from "@opencode-ai/core/database/database"
 import { Project } from "../../src/project/project"
 import { Session } from "../../src/session/session"
 import { WorkspacePaths } from "../../src/server/routes/instance/httpapi/groups/workspace"
@@ -30,7 +31,6 @@ import {
   workspaceRoutingLayer,
 } from "../../src/server/routes/instance/httpapi/middleware/workspace-routing"
 import { HEADER as FenceHeader } from "../../src/server/shared/fence"
-import { Database } from "../../src/storage/db"
 import { resetDatabase } from "../fixture/db"
 import { workspaceLayerWithRuntimeFlags } from "../fixture/workspace"
 import { tmpdirScoped } from "../fixture/fixture"
@@ -54,6 +54,7 @@ const it = testEffect(
     testStateLayer,
     NodeHttpServer.layerTest,
     NodeServices.layer,
+    Database.defaultLayer,
     Project.defaultLayer,
     workspaceLayer,
     Socket.layerWebSocketConstructorGlobal,
@@ -64,6 +65,7 @@ type ProxiedRequest = {
   url: string
   method: string
   headers: Record<string, string>
+  body: string
 }
 
 type TestHandler<E, R> = (
@@ -164,10 +166,15 @@ const insertRemoteWorkspaceWithoutSync = (input: {
   type: string
   url: string
 }) =>
-  Effect.sync(() => {
-    const id = WorkspaceID.ascending()
+  Effect.gen(function* () {
+    const id = WorkspaceV2.ID.ascending()
     registerAdapter(input.projectID, input.type, remoteAdapter(path.join(input.dir, `.${input.type}`), input.url))
-    Database.use((db) => db.insert(WorkspaceTable).values({ id, type: input.type, project_id: input.projectID }).run())
+    const { db } = yield* Database.Service
+    yield* db
+      .insert(WorkspaceTable)
+      .values({ id, type: input.type, project_id: input.projectID })
+      .run()
+      .pipe(Effect.orDie)
     return id
   })
 
@@ -181,7 +188,12 @@ const startRemoteWorkspaceHttpServer = <E, R>(
       // everything else is the request being proxied by the middleware.
       const sync = syncResponse(request)
       if (sync) return yield* sync
-      return yield* handler({ url: request.url, method: request.method, headers: request.headers })
+      return yield* handler({
+        url: request.url,
+        method: request.method,
+        headers: request.headers,
+        body: yield* request.text,
+      })
     }),
   )
 
@@ -285,13 +297,18 @@ describe("HttpApi workspace routing middleware", () => {
       // should make the middleware call HttpApiProxy.http instead.
       yield* serveProbe
 
+      const body = '{"title":"Remote workspace request"}'
       const response = yield* HttpClientRequest.patch(`/probe?workspace=${workspace.id}&keep=yes`).pipe(
         HttpClientRequest.setHeaders({
-          "content-type": "application/json",
           "x-opencode-directory": "/secret/path",
           "x-opencode-workspace": "internal",
         }),
+        HttpClientRequest.bodyStream(
+          Stream.make(new TextEncoder().encode('{"title":"Remote '), new TextEncoder().encode('workspace request"}')),
+          { contentType: "application/json" },
+        ),
         HttpClient.execute,
+        Effect.timeout("2 seconds"),
       )
 
       expect(response.status).toBe(201)
@@ -304,6 +321,7 @@ describe("HttpApi workspace routing middleware", () => {
       expect(forwardedURL?.searchParams.get("keep")).toBe("yes")
       expect(forwardedURL?.searchParams.get("workspace")).toBeNull()
       expect(forwarded?.method).toBe("PATCH")
+      expect(forwarded?.body).toBe(body)
       expect(forwarded?.headers["content-type"]).toBe("application/json")
       expect(forwarded?.headers["x-target-auth"]).toBe("secret")
       expect(forwarded?.headers["x-opencode-directory"]).toBeUndefined()
@@ -315,9 +333,11 @@ describe("HttpApi workspace routing middleware", () => {
     Effect.gen(function* () {
       const dir = yield* tmpdirScoped({ git: true })
       const project = yield* Project.use.fromDirectory(dir)
-      const workspaceID = WorkspaceID.ascending()
+      const workspaceID = WorkspaceV2.ID.ascending()
       const type = "remote-http-fence-target"
-      const waited = yield* Ref.make<{ workspaceID: WorkspaceID; state: Record<string, number> } | undefined>(undefined)
+      const waited = yield* Ref.make<{ workspaceID: WorkspaceV2.ID; state: Record<string, number> } | undefined>(
+        undefined,
+      )
 
       const remoteUrl = yield* startRemoteWorkspaceHttpServer(() =>
         HttpServerResponse.json(
@@ -426,7 +446,7 @@ describe("HttpApi workspace routing middleware", () => {
 
   it.live("returns a missing workspace response for unknown workspace ids", () =>
     Effect.gen(function* () {
-      const workspaceID = WorkspaceID.ascending("wrk_missing")
+      const workspaceID = WorkspaceV2.ID.ascending("wrk_missing")
       // If the middleware resolves the workspace first, this handler is never
       // reached and the response should be the middleware error response.
       yield* serveProbe
