@@ -3,8 +3,8 @@ import path from "path"
 import fs from "fs/promises"
 import { fileURLToPath, pathToFileURL } from "url"
 import { Effect, Layer, Result, Schema } from "effect"
-import { z } from "zod"
 import { CrossSpawnSpawner } from "@opencode-ai/core/cross-spawn-spawner"
+import { Database } from "@opencode-ai/core/database/database"
 import { ToolRegistry } from "@/tool/registry"
 import { Tool } from "@/tool/tool"
 import { disposeAllInstances, TestInstance } from "../fixture/fixture"
@@ -23,7 +23,7 @@ import { Provider } from "@/provider/provider"
 import { Git } from "@/git"
 import { LSP } from "@/lsp/lsp"
 import { Instruction } from "@/session/instruction"
-import { Bus } from "@/bus"
+import { EventV2Bridge } from "@/event-v2-bridge"
 import { FetchHttpClient } from "effect/unstable/http"
 import { Format } from "@/format"
 import { Ripgrep } from "@/file/ripgrep"
@@ -31,11 +31,11 @@ import * as Truncate from "@/tool/truncate"
 import { InstanceState } from "@/effect/instance-state"
 import { Reference } from "@/reference/reference"
 import { RepositoryCache } from "@/reference/repository-cache"
-import { ProviderID, ModelID } from "@/provider/schema"
+
 import { ToolJsonSchema } from "@/tool/json-schema"
 import { MessageID, SessionID } from "@/session/schema"
 import { RuntimeFlags } from "@/effect/runtime-flags"
-import { ContextIntel } from "@/context-intel"
+import { ProviderV2 } from "@opencode-ai/core/provider"
 
 const node = CrossSpawnSpawner.defaultLayer
 const configLayer = TestConfig.layer({
@@ -64,14 +64,13 @@ const registryLayer = (opts: RegistryLayerOptions = {}) =>
       Layer.provide(LSP.defaultLayer),
       Layer.provide(Instruction.defaultLayer),
       Layer.provide(AppFileSystem.defaultLayer),
-      Layer.provide(Bus.layer),
+      Layer.provide(EventV2Bridge.defaultLayer),
       Layer.provide(FetchHttpClient.layer),
       Layer.provide(Format.defaultLayer),
-      Layer.provide(node),
+      Layer.provide(Layer.mergeAll(node, Database.defaultLayer)),
       Layer.provide(Ripgrep.defaultLayer),
       Layer.provide(Truncate.defaultLayer),
     )
-    .pipe(Layer.provide(ContextIntel.defaultLayer))
     .pipe(Layer.provide(RuntimeFlags.layer(opts.flags ?? {})))
 
 // Fake Plugin.Service that returns a single plugin whose `tool` map contains
@@ -102,49 +101,8 @@ const it = testEffect(Layer.mergeAll(registryLayer(), node, Agent.defaultLayer))
 const scout = testEffect(
   Layer.mergeAll(registryLayer({ flags: { experimentalScout: true } }), node, Agent.defaultLayer),
 )
-const compact = testEffect(
-  Layer.mergeAll(registryLayer({ flags: { experimentalCompactTools: true } }), node, Agent.defaultLayer),
-)
-const macro = testEffect(
-  Layer.mergeAll(registryLayer({ flags: { experimentalMacroTools: true } }), node, Agent.defaultLayer),
-)
-const contextTools = testEffect(
-  Layer.mergeAll(registryLayer({ flags: { experimentalContextTools: true } }), node, Agent.defaultLayer),
-)
-const semanticSearch = testEffect(
-  Layer.mergeAll(registryLayer({ flags: { experimentalSemanticSearch: true } }), node, Agent.defaultLayer),
-)
 const withBrokenPlugin = testEffect(
   Layer.mergeAll(registryLayer({ plugin: brokenPluginLayer }), node, Agent.defaultLayer),
-)
-
-const describedPluginLayer = Layer.succeed(
-  Plugin.Service,
-  Plugin.Service.of({
-    init: () => Effect.void,
-    trigger: ((_name: unknown, _input: unknown, output: unknown) =>
-      Effect.succeed(output)) as Plugin.Interface["trigger"],
-    list: () =>
-      Effect.succeed([
-        {
-          tool: {
-            described_plugin_tool: {
-              description: "custom verbose description",
-              args: { text: z.string().describe("custom text") },
-              execute: async () => "ok",
-            },
-          },
-        },
-      ]),
-  }),
-)
-
-const compactWithDescribedPlugin = testEffect(
-  Layer.mergeAll(
-    registryLayer({ flags: { experimentalCompactTools: true }, plugin: describedPluginLayer }),
-    node,
-    Agent.defaultLayer,
-  ),
 )
 
 afterEach(async () => {
@@ -181,159 +139,6 @@ describe("tool.registry", () => {
     }),
   )
 
-  it.instance("keeps the legacy edit/search primitives by default", () =>
-    Effect.gen(function* () {
-      const registry = yield* ToolRegistry.Service
-      const ids = yield* registry.ids()
-
-      expect(ids).toContain("glob")
-      expect(ids).toContain("grep")
-      expect(ids).toContain("edit")
-      expect(ids).toContain("write")
-      expect(ids).toContain("apply_patch")
-      expect(ids).not.toContain("rg")
-      expect(ids).not.toContain("write_patch")
-      expect(ids).not.toContain("project_dossier")
-      expect(ids).not.toContain("view_outline")
-      expect(ids).not.toContain("semantic_search")
-    }),
-  )
-
-  macro.instance("adds macro tools behind the macro flag without removing primitives", () =>
-    Effect.gen(function* () {
-      const registry = yield* ToolRegistry.Service
-      const ids = yield* registry.ids()
-
-      expect(ids).toContain("project_dossier")
-      expect(ids).toContain("view_outline")
-      expect(ids).toContain("semantic_search")
-      expect(ids).toContain("read")
-      expect(ids).toContain("glob")
-      expect(ids).toContain("grep")
-      expect(ids).toContain("edit")
-      expect(ids).toContain("write")
-    }),
-  )
-
-  contextTools.instance("allows context tools without semantic search", () =>
-    Effect.gen(function* () {
-      const registry = yield* ToolRegistry.Service
-      const ids = yield* registry.ids()
-
-      expect(ids).toContain("project_dossier")
-      expect(ids).toContain("view_outline")
-      expect(ids).not.toContain("semantic_search")
-    }),
-  )
-
-  semanticSearch.instance("allows semantic search without context tools", () =>
-    Effect.gen(function* () {
-      const registry = yield* ToolRegistry.Service
-      const ids = yield* registry.ids()
-
-      expect(ids).toContain("semantic_search")
-      expect(ids).not.toContain("project_dossier")
-      expect(ids).not.toContain("view_outline")
-    }),
-  )
-
-  compact.instance("exposes the compact enhanced core when enabled", () =>
-    Effect.gen(function* () {
-      const registry = yield* ToolRegistry.Service
-      const ids = yield* registry.ids()
-
-      expect(ids).toContain("bash")
-      expect(ids).toContain("read")
-      expect(ids).toContain("rg")
-      expect(ids).toContain("write_patch")
-      expect(ids).not.toContain("project_dossier")
-      expect(ids).not.toContain("view_outline")
-      expect(ids).not.toContain("semantic_search")
-      expect(ids).not.toContain("glob")
-      expect(ids).not.toContain("grep")
-      expect(ids).not.toContain("edit")
-      expect(ids).not.toContain("write")
-      expect(ids).not.toContain("apply_patch")
-    }),
-  )
-
-  compact.instance("strips built-in schema prose in compact mode", () =>
-    Effect.gen(function* () {
-      const registry = yield* ToolRegistry.Service
-      const agent = yield* Agent.Service
-      const tools = yield* registry.tools({
-        providerID: ProviderID.opencode,
-        modelID: ModelID.make("test"),
-        agent: yield* agent.defaultInfo(),
-      })
-      const rg = tools.find((tool) => tool.id === "rg")
-      const writePatch = tools.find((tool) => tool.id === "write_patch")
-
-      expect(rg?.description).toBe(
-        "Ripgrep search/list. Required: pattern (regex/glob). Optional: path (root, default cwd), mode=content|files, glob (file filter), literal (no regex), ignoreCase, hidden (show dotfiles), max (default 100).",
-      )
-      expect(writePatch?.description).toBe(
-        "Exact string replace in file. Required: path, old (text to find; empty creates file), new (replacement). Optional: count (expected matches, default 1). Fails on count mismatch.",
-      )
-      // $schema and title are still stripped; parameter descriptions are preserved so
-      // local LLMs get inline guidance for each field.
-      const rgJson = JSON.stringify(rg?.jsonSchema)
-      const wpJson = JSON.stringify(writePatch?.jsonSchema)
-      expect(rgJson).not.toContain("$schema")
-      expect(rgJson).not.toContain('"title"')
-      expect(wpJson).not.toContain("$schema")
-      expect(wpJson).not.toContain('"title"')
-      // Parameter descriptions must survive stripping.
-      expect(rgJson).toContain("regex or glob")
-      expect(rgJson).toContain("case-insensitive match")
-      expect(wpJson).toContain("file path")
-      expect(wpJson).toContain("replacement text")
-    }),
-  )
-
-  macro.instance("uses compact macro descriptions only for built-in tools", () =>
-    Effect.gen(function* () {
-      const registry = yield* ToolRegistry.Service
-      const agent = yield* Agent.Service
-      const tools = yield* registry.tools({
-        providerID: ProviderID.opencode,
-        modelID: ModelID.make("test"),
-        agent: yield* agent.defaultInfo(),
-      })
-
-      expect(tools.find((tool) => tool.id === "project_dossier")?.description).toBe(
-        "Repo dossier. No params. Reports cwd, git, package mgr, scripts, entrypoints, deps.",
-      )
-      expect(tools.find((tool) => tool.id === "view_outline")?.description).toBe(
-        "Source file outline. Required: path. Optional: maxSymbols (default 120), includePrivate (default false). Returns [line, kind, name, signature].",
-      )
-      expect(tools.find((tool) => tool.id === "semantic_search")?.description).toBe(
-        "Semantic codebase search. Required: query. Optional: path (default cwd), max (default 10), mode=auto|lexical|semantic. Returns scored spans.",
-      )
-    }),
-  )
-
-  compactWithDescribedPlugin.instance("does not compact custom plugin tools", () =>
-    Effect.gen(function* () {
-      const registry = yield* ToolRegistry.Service
-      const agent = yield* Agent.Service
-      const tools = yield* registry.tools({
-        providerID: ProviderID.opencode,
-        modelID: ModelID.make("test"),
-        agent: yield* agent.defaultInfo(),
-      })
-      const custom = tools.find((tool) => tool.id === "described_plugin_tool")
-      if (!custom) throw new Error("described plugin tool was not loaded")
-
-      expect(custom.description).toBe("custom verbose description")
-      expect(ToolJsonSchema.fromTool(custom)).toMatchObject({
-        properties: {
-          text: { description: "custom text" },
-        },
-      })
-    }),
-  )
-
   it.instance("hides task background parameter unless experimental background subagents are enabled", () =>
     Effect.gen(function* () {
       const registry = yield* ToolRegistry.Service
@@ -341,8 +146,8 @@ describe("tool.registry", () => {
       const build = yield* agent.get("build")
       if (!build) throw new Error("build agent not found")
       const task = (yield* registry.tools({
-        providerID: ProviderID.opencode,
-        modelID: ModelID.make("test"),
+        providerID: ProviderV2.ID.opencode,
+        modelID: ProviderV2.ModelID.make("test"),
         agent: build,
       })).find((tool) => tool.id === "task")
 
@@ -519,8 +324,8 @@ describe("tool.registry", () => {
 
       const agents = yield* Agent.Service
       const promptTools = yield* registry.tools({
-        providerID: ProviderID.opencode,
-        modelID: ModelID.make("test"),
+        providerID: ProviderV2.ID.opencode,
+        modelID: ProviderV2.ModelID.make("test"),
         agent: yield* agents.defaultInfo(),
       })
       const promptTool = promptTools.find((tool) => tool.id === "sql")

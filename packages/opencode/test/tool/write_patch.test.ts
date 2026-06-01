@@ -8,7 +8,7 @@ import { LSP } from "@/lsp/lsp"
 import { AppFileSystem } from "@opencode-ai/core/filesystem"
 import { Format } from "../../src/format"
 import { Agent } from "../../src/agent/agent"
-import { Bus } from "../../src/bus"
+import { EventV2Bridge } from "../../src/event-v2-bridge"
 import { Truncate } from "@/tool/truncate"
 import { SessionID, MessageID } from "../../src/session/schema"
 import * as Tool from "../../src/tool/tool"
@@ -33,7 +33,7 @@ const layer = Layer.mergeAll(
   LSP.defaultLayer,
   AppFileSystem.defaultLayer,
   Format.defaultLayer,
-  Bus.layer,
+  EventV2Bridge.defaultLayer,
   Truncate.defaultLayer,
   Agent.defaultLayer,
 )

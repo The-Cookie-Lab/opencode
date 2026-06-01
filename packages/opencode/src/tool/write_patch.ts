@@ -2,7 +2,7 @@ import * as path from "path"
 import { Effect, Schema, Semaphore } from "effect"
 import { createTwoFilesPatch, diffLines } from "diff"
 import { AppFileSystem } from "@opencode-ai/core/filesystem"
-import { Bus } from "@/bus"
+import { EventV2Bridge } from "@/event-v2-bridge"
 import { File } from "@/file"
 import { FileWatcher } from "@/file/watcher"
 import { Format } from "@/format"
@@ -36,14 +36,14 @@ type Metadata = {
 export const WritePatchTool = Tool.define<
   typeof Parameters,
   Metadata,
-  LSP.Service | AppFileSystem.Service | Format.Service | Bus.Service
+  LSP.Service | AppFileSystem.Service | Format.Service | EventV2Bridge.Service
 >(
   "write_patch",
   Effect.gen(function* () {
     const lsp = yield* LSP.Service
     const afs = yield* AppFileSystem.Service
     const format = yield* Format.Service
-    const bus = yield* Bus.Service
+    const events = yield* EventV2Bridge.Service
 
     return {
       description:
@@ -94,8 +94,8 @@ export const WritePatchTool = Tool.define<
 
               yield* afs.writeWithDirs(filepath, Bom.join(contentNew, desiredBom))
               if (yield* format.file(filepath)) contentNew = yield* Bom.syncFile(afs, filepath, desiredBom)
-              yield* bus.publish(File.Event.Edited, { file: filepath })
-              yield* bus.publish(FileWatcher.Event.Updated, {
+              yield* events.publish(File.Event.Edited, { file: filepath })
+              yield* events.publish(FileWatcher.Event.Updated, {
                 file: filepath,
                 event: exists ? "change" : "add",
               })
