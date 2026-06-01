@@ -1436,44 +1436,54 @@ function AssistantMessage(props: { message: AssistantMessage; parts: Part[]; las
   const childShortcut = useCommandShortcut("session.child.first")
 
   const stepFinish = createMemo(() => {
-    return props.parts.find((p) => p.type === "step-finish") as
+    // Use the last step-finish part so multi-step (tool-call) sessions show
+    // the final step's data, which is most likely to carry promptTokensDetails.
+    const match = props.parts
+      .slice()
+      .reverse()
+      .find((p) => p.type === "step-finish")
+    return match as
       | (Part & { tokens: { input: number; output: number; reasoning: number }; promptTokensDetails?: any })
       | undefined
   })
 
   const tokenBreakdown = createMemo(() => {
     const sf = stepFinish()
-    if (!sf?.promptTokensDetails) return null
+    if (!sf) return null
+
+    const segments: string[] = []
+
+    // Input tokens (always shown)
     const ptd = sf.promptTokensDetails
-
-    const parts: string[] = []
-
-    // Input tokens
     let inputStr = `${Locale.number(sf.tokens.input)}↑`
-    const cached = ptd.messages?.reduce((sum: number, m: { cached?: number }) => sum + (m.cached ?? 0), 0) ?? 0
-    if (cached > 0) inputStr += ` (${Locale.number(cached)}Δ)`
-    parts.push(inputStr)
+    if (ptd) {
+      const cached = ptd.messages?.reduce((sum: number, m: { cached?: number }) => sum + (m.cached ?? 0), 0) ?? 0
+      if (cached > 0) inputStr += ` (${Locale.number(cached)}Δ)`
+    }
+    segments.push(inputStr)
 
-    // Output tokens
-    parts.push(`${Locale.number(sf.tokens.output)}↓`)
+    // Output tokens (always shown)
+    segments.push(`${Locale.number(sf.tokens.output)}↓`)
 
     // Reasoning tokens
     if (sf.tokens.reasoning > 0) {
-      parts.push(`${Locale.number(sf.tokens.reasoning)}⊕`)
+      segments.push(`${Locale.number(sf.tokens.reasoning)}⊕`)
     }
 
-    // Tool tokens
-    if (ptd.tools?.length > 0) {
-      const toolTotal = ptd.tools.reduce((sum: number, t: { tokens: number }) => sum + t.tokens, 0)
-      parts.push(`tools ${Locale.number(toolTotal)}`)
+    if (ptd) {
+      // Tool tokens
+      if (ptd.tools?.length > 0) {
+        const toolTotal = ptd.tools.reduce((sum: number, t: { tokens: number }) => sum + t.tokens, 0)
+        segments.push(`tools ${Locale.number(toolTotal)}`)
+      }
+
+      // Overhead
+      if (ptd.template_overhead > 0) {
+        segments.push(`oh ${Locale.number(ptd.template_overhead)}`)
+      }
     }
 
-    // Overhead
-    if (ptd.template_overhead > 0) {
-      parts.push(`oh ${Locale.number(ptd.template_overhead)}`)
-    }
-
-    return `▸ ${parts.join(" · ")}`
+    return `▸ ${segments.join(" · ")}`
   })
 
   return (
