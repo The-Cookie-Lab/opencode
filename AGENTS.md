@@ -38,6 +38,13 @@ Tool schema flow: **Effect Schema** → `ToolJsonSchema.fromSchema()` in `json-s
 - Single-binary build: `bun run ./packages/opencode/script/build.ts --single` from the worktree. The parent `./cookiecode build opencode` targets the main checkout, not arbitrary worktrees.
 - The build may repair optional native packages and emit Vite warnings. Check `git status --short` and lockfile diffs before staging.
 
+## Fork Sync Helpers
+
+- `script/sync-upstream-dev.sh`: merge `upstream/dev` into local `dev` with `--no-ff`.
+- `script/sync-upstream-dev-with-backup.sh`: create a timestamped backup branch, verify it, prune older backup branches (keep newest only), then merge `upstream/dev`.
+- Package aliases: `bun run sync:upstream-dev` and `bun run sync:upstream-dev:backup` from repo root.
+- Helpers require clean working tree and configured `origin` + `upstream` remotes.
+
 ## Commits & PRs
 
 Conventional: `type(scope): summary`. Types: `feat`, `fix`, `docs`, `chore`, `refactor`, `test`. Scopes: `core`, `opencode`, `tui`, `app`, `desktop`, `sdk`, `plugin`.
@@ -111,3 +118,5 @@ const table = sqliteTable("session", {
 ## Type Checking
 
 - `bun typecheck` from package dirs, never `tsc` directly.
+- Resolve all typecheck failures before pushing any branch.
+- Do not use `git push --no-verify` unless the user explicitly requests it for the current task.
