@@ -53,6 +53,21 @@ To run OpenCode in the root of the opencode repo itself:
 bun dev .
 ```
 
+### Syncing a fork with upstream dev
+
+For downstream forks that track upstream `dev`, use the helper scripts from the repo root:
+
+```bash
+# Merge upstream/dev into local dev
+bun run sync:upstream-dev
+
+# Create a timestamped backup branch, prune older backups, then merge
+bun run sync:upstream-dev:backup
+```
+
+Both helpers require a clean working tree and `origin` + `upstream` remotes.
+Use `--push` to push after merge. Use `--no-verify` only when explicitly requested.
+
 ### Building a "localcode"
 
 To compile a standalone executable:
