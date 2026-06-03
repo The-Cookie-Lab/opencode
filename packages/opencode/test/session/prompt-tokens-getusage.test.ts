@@ -16,6 +16,7 @@ const SERVER_USAGE_WITH_TOOLS = {
       { name: "read", tokens: 36 },
       { name: "write", tokens: 45 },
     ],
+    agent_instructions: [{ tokens: 22, cached: 0 }],
     template_overhead: 0,
     image_tokens: 0,
   },
@@ -71,6 +72,8 @@ describe("getUsage promptTokensDetails integration", () => {
     expect(result.promptTokensDetails).toBeDefined()
     expect(result.promptTokensDetails!.messages).toHaveLength(2)
     expect(result.promptTokensDetails!.tools).toHaveLength(2)
+    expect(result.promptTokensDetails!.agent_instructions).toHaveLength(1)
+    expect(result.promptTokensDetails!.agent_instructions[0]!.tokens).toBe(22)
     expect(result.promptTokensDetails!.template_overhead).toBe(0)
     expect(result.promptTokensDetails!.image_tokens).toBe(0)
   })

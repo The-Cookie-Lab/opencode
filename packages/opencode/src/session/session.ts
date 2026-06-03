@@ -431,14 +431,18 @@ export const getUsage = (input: { model: Provider.Model; usage: Usage; metadata?
   const contextTokens = inputTokens
 
   // Extract server-provided prompt token breakdown from provider metadata.
-  // The model-server gateway injects {messages, tools, template_overhead, image_tokens}
+  // The model-server gateway injects {messages, tools, agent_instructions,
+  // template_overhead, image_tokens}
   // into the OpenAI prompt_tokens_details shape.
   //
   // AI SDK native protocols (openai, anthropic, etc.) key metadata by a well-known
   // provider name (e.g. "openai"), but AI-SDK-compatible providers and gateway-backed
   // providers key by the configured providerID (e.g. "local-model-server"). Walk all
   // metadata keys to find prompt_tokens_details regardless of the key name.
-  const findPromptTokensDetails = (meta: ProviderMetadata | undefined, label: string): Record<string, unknown> | undefined => {
+  const findPromptTokensDetails = (
+    meta: ProviderMetadata | undefined,
+    label: string,
+  ): Record<string, unknown> | undefined => {
     if (!meta) return undefined
     const metaKeys = Object.keys(meta)
     for (const key of metaKeys) {
@@ -449,11 +453,14 @@ export const getUsage = (input: { model: Provider.Model; usage: Usage; metadata?
     }
     return undefined
   }
-  const rawDetails = findPromptTokensDetails(input.metadata, "metadata") ?? findPromptTokensDetails(input.usage?.providerMetadata, "usage.providerMetadata")
+  const rawDetails =
+    findPromptTokensDetails(input.metadata, "metadata") ??
+    findPromptTokensDetails(input.usage?.providerMetadata, "usage.providerMetadata")
   const promptTokensDetails =
     rawDetails &&
     (Array.isArray(rawDetails.messages) ||
       Array.isArray(rawDetails.tools) ||
+      Array.isArray(rawDetails.agent_instructions) ||
       typeof rawDetails.template_overhead === "number" ||
       typeof rawDetails.image_tokens === "number")
       ? {
@@ -466,12 +473,14 @@ export const getUsage = (input: { model: Provider.Model; usage: Usage; metadata?
             name: string
             tokens: number
           }[],
+          agent_instructions: (Array.isArray(rawDetails.agent_instructions) ? rawDetails.agent_instructions : []) as {
+            tokens: number
+            cached?: number
+          }[],
           template_overhead: (typeof rawDetails.template_overhead === "number"
             ? rawDetails.template_overhead
             : 0) as number,
-          image_tokens: (typeof rawDetails.image_tokens === "number"
-            ? rawDetails.image_tokens
-            : 0) as number,
+          image_tokens: (typeof rawDetails.image_tokens === "number" ? rawDetails.image_tokens : 0) as number,
         }
       : undefined
 

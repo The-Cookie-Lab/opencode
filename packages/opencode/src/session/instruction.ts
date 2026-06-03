@@ -11,6 +11,7 @@ import { withTransientReadRetry } from "@/util/effect-http-client"
 import { Global } from "@opencode-ai/core/global"
 import type { MessageV2 } from "./message-v2"
 import type { MessageID } from "./schema"
+import { InstructionRenderer } from "./instruction-renderer"
 
 function extract(messages: SessionLegacy.WithParts[]) {
   const paths = new Set<string>()
@@ -32,7 +33,7 @@ function extract(messages: SessionLegacy.WithParts[]) {
 export interface Interface {
   readonly clear: (messageID: MessageID) => Effect.Effect<void>
   readonly systemPaths: () => Effect.Effect<Set<string>, AppFileSystem.Error>
-  readonly system: () => Effect.Effect<string[], AppFileSystem.Error>
+  readonly system: (options?: { prompt?: string }) => Effect.Effect<string[], AppFileSystem.Error>
   readonly find: (dir: string) => Effect.Effect<string | undefined, AppFileSystem.Error>
   readonly resolve: (
     messages: SessionLegacy.WithParts[],
@@ -105,9 +106,34 @@ export const layer: Layer.Layer<
       s.claims.delete(messageID)
     })
 
+    const projectInstructionPaths = Effect.fn("Instruction.projectInstructionPaths")(function* () {
+      const ctx = yield* InstanceState.context
+      const paths: string[] = []
+      const stop =
+        AppFileSystem.contains(path.resolve(global.home), path.resolve(ctx.directory)) && global.home !== "/"
+          ? path.resolve(global.home)
+          : path.resolve(ctx.worktree)
+      let current = path.resolve(ctx.directory)
+      const dirs: string[] = []
+
+      while (true) {
+        dirs.push(current)
+        if (current === stop) break
+        const parent = path.dirname(current)
+        if (parent === current) break
+        if (!AppFileSystem.contains(stop, parent) && parent !== stop) break
+        current = parent
+      }
+
+      for (const dir of dirs.reverse()) {
+        const found = yield* find(dir)
+        if (found) paths.push(path.resolve(found))
+      }
+      return paths
+    })
+
     const systemPaths = Effect.fn("Instruction.systemPaths")(function* () {
       const config = yield* cfg.get()
-      const ctx = yield* InstanceState.context
       const paths = new Set<string>()
 
       for (const file of globalFiles) {
@@ -117,17 +143,9 @@ export const layer: Layer.Layer<
         }
       }
 
-      // The first project-level match wins so we don't stack AGENTS.md/CLAUDE.md from every ancestor.
       if (!Flag.OPENCODE_DISABLE_PROJECT_CONFIG) {
-        for (const file of instructionFiles) {
-          const matches = yield* fs
-            .findUp(file, ctx.directory, ctx.worktree)
-            .pipe(Effect.catch(() => Effect.succeed([])))
-          if (matches.length > 0) {
-            matches.forEach((item) => paths.add(path.resolve(item)))
-            break
-          }
-        }
+        const matches = yield* projectInstructionPaths()
+        matches.forEach((item) => paths.add(item))
       }
 
       if (config.instructions) {
@@ -150,20 +168,25 @@ export const layer: Layer.Layer<
       return paths
     })
 
-    const system = Effect.fn("Instruction.system")(function* () {
+    const system = Effect.fn("Instruction.system")(function* (options?: { prompt?: string }) {
       const config = yield* cfg.get()
       const paths = yield* systemPaths()
       const urls = (config.instructions ?? []).filter(
         (item) => item.startsWith("https://") || item.startsWith("http://"),
       )
 
-      const files = yield* Effect.forEach(Array.from(paths), read, { concurrency: 8 })
+      const pathList = Array.from(paths)
+      const files = yield* Effect.forEach(pathList, read, { concurrency: 8 })
       const remote = yield* Effect.forEach(urls, fetch, { concurrency: 4 })
+      const sources = [
+        ...pathList.map((filepath, i) => ({ filepath, content: files[i] ?? "", order: i })),
+        ...urls.map((filepath, i) => ({ filepath, content: remote[i] ?? "", order: pathList.length + i })),
+      ].filter((source) => source.content)
 
-      return [
-        ...Array.from(paths).flatMap((item, i) => (files[i] ? [`Instructions from: ${item}\n${files[i]}`] : [])),
-        ...urls.flatMap((item, i) => (remote[i] ? [`Instructions from: ${item}\n${remote[i]}`] : [])),
-      ]
+      return InstructionRenderer.render(sources, {
+        mode: flags.agentInstructionMode,
+        prompt: options?.prompt,
+      }).blocks
     })
 
     const find = Effect.fn("Instruction.find")(function* (dir: string) {

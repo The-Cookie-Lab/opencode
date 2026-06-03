@@ -15,6 +15,12 @@ import type { Plugin } from "@/plugin"
 import { mergeDeep } from "remeda"
 
 const USER_AGENT = `opencode/${InstallationVersion}`
+const AGENT_INSTRUCTION_SPANS_FIELD = "_opencode_agent_instruction_spans"
+
+type AgentInstructionSpan = {
+  readonly start: number
+  readonly end: number
+}
 
 type PrepareInput = {
   readonly user: SessionLegacy.User
@@ -52,17 +58,30 @@ export type Prepared = {
 const mergeOptions = (target: Record<string, any>, source: Record<string, any> | undefined): Record<string, any> =>
   mergeDeep(target, source ?? {}) as Record<string, any>
 
+const codePointLength = (value: string) => Array.from(value).length
+
 export const prepare = Effect.fn("LLMRequestPrep.prepare")(function* (input: PrepareInput) {
   const isOpenaiOauth = input.provider.id === "openai" && input.auth?.type === "oauth"
-  const system = [
-    [
-      ...(input.agent.prompt ? [input.agent.prompt] : SystemPrompt.provider(input.model)),
-      ...input.system,
-      ...(input.user.system ? [input.user.system] : []),
-    ]
-      .filter((x) => x)
-      .join("\n"),
-  ]
+  const baseSystem = (input.agent.prompt ? [input.agent.prompt] : SystemPrompt.provider(input.model)).filter((x) => x)
+  const instructionSystem = input.system.filter((x) => x)
+  const userSystem = (input.user.system ? [input.user.system] : []).filter((x) => x)
+  const systemParts = [...baseSystem, ...instructionSystem, ...userSystem]
+  const instructionStart = baseSystem.length
+  const instructionEnd = instructionStart + instructionSystem.length
+  let cursor = 0
+  const agentInstructionSpans: AgentInstructionSpan[] = []
+  const content = systemParts
+    .map((part, index) => {
+      const start = cursor
+      cursor += codePointLength(part)
+      if (index >= instructionStart && index < instructionEnd) {
+        agentInstructionSpans.push({ start, end: cursor })
+      }
+      cursor += 1
+      return part
+    })
+    .join("\n")
+  const system = [content]
 
   const header = system[0]
   yield* input.plugin.trigger(
@@ -94,12 +113,21 @@ export const prepare = Effect.fn("LLMRequestPrep.prepare")(function* (input: Pre
     isOpenaiOauth || input.isWorkflow
       ? input.messages
       : [
-          ...system.map(
-            (x): ModelMessage => ({
+          ...system.map((x, index): ModelMessage => {
+            const providerOptions =
+              index === 0 && x === header && agentInstructionSpans.length > 0
+                ? {
+                    openaiCompatible: {
+                      [AGENT_INSTRUCTION_SPANS_FIELD]: agentInstructionSpans,
+                    },
+                  }
+                : undefined
+            return {
               role: "system",
               content: x,
-            }),
-          ),
+              ...(providerOptions ? { providerOptions } : {}),
+            }
+          }),
           ...input.messages,
         ]
 

@@ -100,7 +100,9 @@ When opencode starts, it looks for rule files in this order:
 2. **Global file** at `~/.config/opencode/AGENTS.md`
 3. **Claude Code file** at `~/.claude/CLAUDE.md` (unless disabled)
 
-The first matching file wins in each category. For example, if you have both `AGENTS.md` and `CLAUDE.md`, only `AGENTS.md` is used. Similarly, `~/.config/opencode/AGENTS.md` takes precedence over `~/.claude/CLAUDE.md`.
+Local files are loaded broad-to-narrow so a repository root `AGENTS.md` can define defaults and a nested `AGENTS.md` can add narrower package rules. Within the same directory, `AGENTS.md` takes precedence over `CLAUDE.md`; if both exist, only `AGENTS.md` is used for that directory. Similarly, `~/.config/opencode/AGENTS.md` takes precedence over `~/.claude/CLAUDE.md`.
+
+Set `OPENCODE_AGENT_INSTRUCTION_MODE=curated` to enable experimental instruction curation. Curated mode keeps raw instruction loading as the fallback, but when instruction files use addressable IDs such as `USR.RULE.GREEN_BUILD`, opencode can compact duplicate IDs, honor `replaced_by=` notes, and route task-specific rules based on the current prompt.
 
 ---
 

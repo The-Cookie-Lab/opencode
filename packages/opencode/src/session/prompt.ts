@@ -87,6 +87,19 @@ function isOrphanedInterruptedTool(part: SessionLegacy.ToolPart) {
   return part.state.status === "error" && part.state.metadata?.interrupted === true
 }
 
+function instructionPrompt(parts: SessionLegacy.Part[]) {
+  return parts
+    .flatMap((part) => {
+      if (part.type === "text" && !part.ignored && !part.synthetic) return [part.text]
+      if (part.type === "file") {
+        if (part.source?.type === "file") return [part.source.path]
+        if (part.filename) return [part.filename]
+      }
+      return []
+    })
+    .join("\n")
+}
+
 export interface Interface {
   readonly cancel: (sessionID: SessionID) => Effect.Effect<void>
   readonly prompt: (input: PromptInput) => Effect.Effect<SessionLegacy.WithParts, Image.Error>
@@ -1437,7 +1450,9 @@ export const layer = Layer.effect(
             const [skills, env, instructions, modelMsgs] = yield* Effect.all([
               sys.skills(agent),
               sys.environment(model),
-              instruction.system().pipe(Effect.orDie),
+              instruction
+                .system({ prompt: lastUserMsg ? instructionPrompt(lastUserMsg.parts) : undefined })
+                .pipe(Effect.orDie),
               MessageV2.toModelMessagesEffect(msgs, model),
             ])
             const system = [...env, ...instructions, ...(skills ? [skills] : [])]

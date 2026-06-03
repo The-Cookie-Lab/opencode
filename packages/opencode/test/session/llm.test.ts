@@ -779,6 +779,79 @@ describe("session.llm.stream", () => {
     },
   )
 
+  it.instance(
+    "marks agent instruction spans on openai-compatible system messages",
+    () =>
+      Effect.gen(function* () {
+        const fixture = loadFixture(vivgridFixture.providerID, vivgridFixture.modelID)
+        const request = waitRequest(
+          "/chat/completions",
+          new Response(createChatStream("Hello"), {
+            status: 200,
+            headers: { "Content-Type": "text/event-stream" },
+          }),
+        )
+
+        const resolved = yield* Provider.use.getModel(
+          ProviderV2.ID.make(vivgridFixture.providerID),
+          ProviderV2.ModelID.make(fixture.model.id),
+        )
+        const sessionID = SessionID.make("session-test-agent-instruction-spans")
+        const agent = {
+          name: "test",
+          mode: "primary",
+          prompt: "Base 🧪 prompt.",
+          options: {},
+          permission: [{ permission: "*", pattern: "*", action: "allow" }],
+        } satisfies Agent.Info
+        const user = {
+          id: MessageID.make("msg_user-agent-instruction-spans"),
+          sessionID,
+          role: "user",
+          time: { created: Date.now() },
+          agent: agent.name,
+          model: { providerID: ProviderV2.ID.make(vivgridFixture.providerID), modelID: resolved.id },
+        } satisfies SessionLegacy.User
+
+        yield* drain({
+          user,
+          sessionID,
+          model: resolved,
+          agent,
+          system: ["First instruction.", "Second instruction."],
+          messages: [{ role: "user", content: "Hello" }],
+          tools: {},
+        })
+
+        const capture = yield* Effect.promise(() => request)
+        const messages = capture.body.messages as Array<Record<string, unknown>>
+        const system = messages[0] as {
+          role: string
+          content: string
+          _opencode_agent_instruction_spans?: unknown[]
+        }
+        expect(system.role).toBe("system")
+        const codePointIndex = (needle: string) =>
+          Array.from(system.content.slice(0, system.content.indexOf(needle))).length
+        const firstStart = codePointIndex("First instruction.")
+        const secondStart = codePointIndex("Second instruction.")
+        expect(system._opencode_agent_instruction_spans).toEqual([
+          { start: firstStart, end: firstStart + Array.from("First instruction.").length },
+          { start: secondStart, end: secondStart + Array.from("Second instruction.").length },
+        ])
+      }),
+    {
+      config: () => ({
+        enabled_providers: [vivgridFixture.providerID],
+        provider: {
+          [vivgridFixture.providerID]: {
+            options: { apiKey: "test-key", baseURL: `${state.server!.url.origin}/v1` },
+          },
+        },
+      }),
+    },
+  )
+
   const alibabaQwenFixture = { providerID: "alibaba", modelID: "qwen-plus" }
   it.instance(
     "service stream cancellation cancels provider response body promptly",

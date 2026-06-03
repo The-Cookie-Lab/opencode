@@ -241,6 +241,33 @@ export const StepFinishPart = Schema.Struct({
       write: Schema.Finite,
     }),
   }),
+  promptTokensDetails: Schema.optional(
+    Schema.Struct({
+      messages: Schema.Array(
+        Schema.Struct({
+          role: Schema.String,
+          tokens: Schema.Finite,
+          cached: Schema.optional(Schema.Finite),
+        }),
+      ),
+      tools: Schema.Array(
+        Schema.Struct({
+          name: Schema.String,
+          tokens: Schema.Finite,
+        }),
+      ),
+      agent_instructions: Schema.optional(
+        Schema.Array(
+          Schema.Struct({
+            tokens: Schema.Finite,
+            cached: Schema.optional(Schema.Finite),
+          }),
+        ),
+      ),
+      template_overhead: Schema.Finite,
+      image_tokens: Schema.Finite,
+    }),
+  ),
 }).annotate({ identifier: "StepFinishPart" })
 export type StepFinishPart = Types.DeepMutable<Schema.Schema.Type<typeof StepFinishPart>>
 

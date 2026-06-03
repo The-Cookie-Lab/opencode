@@ -11,6 +11,7 @@ export type SessionContextBreakdownSegment = {
 
 export type DetailedBreakdownKey =
   | "system_prompt"
+  | "agent_instructions"
   | "tool_definitions"
   | "user_messages"
   | "assistant_messages"
@@ -38,12 +39,20 @@ export type ServerToolTokenDetail = {
   tokens: number
 }
 
+/** Per-agent-instruction token detail as provided by the model-server's
+ *  {@code prompt_tokens_details.agent_instructions} field. */
+export type ServerAgentInstructionTokenDetail = {
+  tokens: number
+  cached?: number
+}
+
 /** Server-provided prompt token breakdown matching the
  *  {@code usage.prompt_tokens_details} shape injected by the model-server
  *  gateway. */
 export type ServerPromptTokensDetails = {
   messages: ServerMessageTokenDetail[]
   tools: ServerToolTokenDetail[]
+  agent_instructions?: ServerAgentInstructionTokenDetail[]
   template_overhead: number
   image_tokens: number
 }
@@ -211,10 +220,7 @@ export function estimateToolDefinitionTokens(tools: Record<string, boolean> | un
 
 // ── server-provided breakdown helper ─────────────────────────────────────
 
-function _buildFromServerBreakdown(
-  sb: ServerPromptTokensDetails,
-  input: number,
-): DetailedBreakdownSegment[] {
+function _buildFromServerBreakdown(sb: ServerPromptTokensDetails, input: number): DetailedBreakdownSegment[] {
   // Aggregate per-role message tokens
   let systemTokens = 0
   let userTokens = 0
@@ -231,10 +237,7 @@ function _buildFromServerBreakdown(
     let tokens = msg.tokens
     // Distribute image tokens proportionally across user messages
     if (msg.role === "user" && imageRemaining > 0 && userTextSum > 0) {
-      const share = Math.min(
-        Math.round((msg.tokens / userTextSum) * sb.image_tokens),
-        imageRemaining,
-      )
+      const share = Math.min(Math.round((msg.tokens / userTextSum) * sb.image_tokens), imageRemaining)
       tokens += share
       imageRemaining -= share
     }
@@ -261,19 +264,27 @@ function _buildFromServerBreakdown(
   }
 
   const toolDefTokens = sb.tools.reduce((sum, t) => sum + t.tokens, 0)
+  const agentInstructionTokens = (sb.agent_instructions ?? []).reduce((sum, item) => sum + item.tokens, 0)
   const allocated =
-    systemTokens + toolDefTokens + userTokens + assistantTokens + toolResultTokens
+    systemTokens + agentInstructionTokens + toolDefTokens + userTokens + assistantTokens + toolResultTokens
   const remaining = Math.max(0, input - allocated)
   const overhead = Math.min(sb.template_overhead, remaining)
 
-  const segments: DetailedBreakdownSegment[] = ([
-    { key: "system_prompt", tokens: systemTokens, percent: toPercentLabel(systemTokens, input) },
-    { key: "tool_definitions", tokens: toolDefTokens, percent: toPercentLabel(toolDefTokens, input) },
-    { key: "user_messages", tokens: userTokens, percent: toPercentLabel(userTokens, input) },
-    { key: "assistant_messages", tokens: assistantTokens, percent: toPercentLabel(assistantTokens, input) },
-    { key: "tool_results", tokens: toolResultTokens, percent: toPercentLabel(toolResultTokens, input) },
-    { key: "overhead", tokens: overhead, percent: toPercentLabel(overhead, input) },
-  ] satisfies DetailedBreakdownSegment[]).filter((s) => s.tokens > 0)
+  const segments: DetailedBreakdownSegment[] = (
+    [
+      { key: "system_prompt", tokens: systemTokens, percent: toPercentLabel(systemTokens, input) },
+      {
+        key: "agent_instructions",
+        tokens: agentInstructionTokens,
+        percent: toPercentLabel(agentInstructionTokens, input),
+      },
+      { key: "tool_definitions", tokens: toolDefTokens, percent: toPercentLabel(toolDefTokens, input) },
+      { key: "user_messages", tokens: userTokens, percent: toPercentLabel(userTokens, input) },
+      { key: "assistant_messages", tokens: assistantTokens, percent: toPercentLabel(assistantTokens, input) },
+      { key: "tool_results", tokens: toolResultTokens, percent: toPercentLabel(toolResultTokens, input) },
+      { key: "overhead", tokens: overhead, percent: toPercentLabel(overhead, input) },
+    ] satisfies DetailedBreakdownSegment[]
+  ).filter((s) => s.tokens > 0)
 
   return segments
 }
@@ -296,6 +307,7 @@ export function estimateDetailedContextBreakdown(args: {
     sb &&
     (sb.messages.length > 0 ||
       sb.tools.length > 0 ||
+      (sb.agent_instructions?.length ?? 0) > 0 ||
       sb.template_overhead > 0 ||
       sb.image_tokens > 0)
   ) {
@@ -331,14 +343,16 @@ export function estimateDetailedContextBreakdown(args: {
   const allocated = systemPromptTokens + toolDefTokens + userTokens + assistantTokens + toolResultTokens
   const overhead = Math.max(0, args.input - allocated)
 
-  const segments: DetailedBreakdownSegment[] = ([
-    { key: "system_prompt", tokens: systemPromptTokens, percent: toPercentLabel(systemPromptTokens, args.input) },
-    { key: "tool_definitions", tokens: toolDefTokens, percent: toPercentLabel(toolDefTokens, args.input) },
-    { key: "user_messages", tokens: userTokens, percent: toPercentLabel(userTokens, args.input) },
-    { key: "assistant_messages", tokens: assistantTokens, percent: toPercentLabel(assistantTokens, args.input) },
-    { key: "tool_results", tokens: toolResultTokens, percent: toPercentLabel(toolResultTokens, args.input) },
-    { key: "overhead", tokens: overhead, percent: toPercentLabel(overhead, args.input) },
-  ] satisfies DetailedBreakdownSegment[]).filter((s) => s.tokens > 0)
+  const segments: DetailedBreakdownSegment[] = (
+    [
+      { key: "system_prompt", tokens: systemPromptTokens, percent: toPercentLabel(systemPromptTokens, args.input) },
+      { key: "tool_definitions", tokens: toolDefTokens, percent: toPercentLabel(toolDefTokens, args.input) },
+      { key: "user_messages", tokens: userTokens, percent: toPercentLabel(userTokens, args.input) },
+      { key: "assistant_messages", tokens: assistantTokens, percent: toPercentLabel(assistantTokens, args.input) },
+      { key: "tool_results", tokens: toolResultTokens, percent: toPercentLabel(toolResultTokens, args.input) },
+      { key: "overhead", tokens: overhead, percent: toPercentLabel(overhead, args.input) },
+    ] satisfies DetailedBreakdownSegment[]
+  ).filter((s) => s.tokens > 0)
 
   return segments
 }

@@ -12,8 +12,10 @@
   5. `message-v2.ts` (StepFinishPart schema) defines the `promptTokensDetails` field on the part
   6. Server → client sync: `step-finish` parts must survive the `SKIP_PARTS` filter. Both the real-time event path (`event-reducer.ts`) and initial load path (`directory-sync.ts`) gate parts through `SKIP_PARTS` — **step-finish must NOT be in this set** or `promptTokensDetails` is silently dropped before the UI sees it. Regression tests in `event-reducer.test.ts` and `directory-sync.test.ts`.
   7. `session-context-tab.tsx` (reads parts from sync store) → `session-context-breakdown.ts` (renders)
-  See also `packages/llm/README.md` and `packages/web/src/content/docs/server.mdx`.
+     The contract includes `messages[]`, `tools[]`, `agent_instructions[]`, `template_overhead`, and `image_tokens`; opencode marks instruction spans on OpenAI-compatible system messages with `_opencode_agent_instruction_spans` so model-server can attribute them without prompt-visible markers.
+     See also `packages/llm/README.md` and `packages/web/src/content/docs/server.mdx`.
 - Experimental tool behavior is opt-in via `RuntimeFlags`. Add tests proving both default and experimental registries.
+- Instruction curation lives in `packages/opencode/src/session/instruction-*.ts` and is gated by `OPENCODE_AGENT_INSTRUCTION_MODE=curated`; keep raw mode as the fallback and cover routing/precedence changes in `packages/opencode/test/session/instruction.test.ts`.
 - Tool param/description changes need `packages/opencode/test/tool/parameters.test.ts` coverage. Regenerate snapshots: `bun test -u test/tool/parameters.test.ts` from `packages/opencode`. Never hand-edit generated snapshot bodies.
 
 ### Tool Compaction Pipeline
@@ -25,6 +27,7 @@ Tool schema flow: **Effect Schema** → `ToolJsonSchema.fromSchema()` in `json-s
 **`compactDescriptions` (~line 65 of `registry.ts`):** 23 entries, one per builtin. Format: `<purpose>. Required: <param (purpose)>. Optional: <param (default)>.` Shell tool's `description` param goes FIRST in Required since local LLMs miss it otherwise: `"5-10 word summary of what the command does — e.g. 'List files in current directory'"`.
 
 **Pipeline files:**
+
 - `registry.ts` — compactDescriptions, stripSchema, tool registration
 - `session/tools.ts` — applies compaction (lines 74-82)
 - `json-schema.ts` — `fromSchema()`, `fromTool()`, `compactJsonSchema()`

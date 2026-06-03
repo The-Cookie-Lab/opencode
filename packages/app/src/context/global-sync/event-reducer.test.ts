@@ -51,6 +51,7 @@ const stepFinishPart = (
     promptTokensDetails: {
       messages: [{ role: "system", tokens: 20 }],
       tools: [{ name: "read", tokens: 10 }],
+      agent_instructions: [{ tokens: 12 }],
       template_overhead: 5,
       image_tokens: 0,
     },
@@ -618,6 +619,7 @@ describe("applyDirectoryEvent", () => {
     expect(details.messages[0].role).toBe("system")
     expect(details.messages[0].tokens).toBe(20)
     expect(details.tools[0].name).toBe("read")
+    expect(details.agent_instructions[0].tokens).toBe(12)
     expect(details.template_overhead).toBe(5)
   })
 

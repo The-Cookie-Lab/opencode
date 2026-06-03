@@ -8,6 +8,10 @@ import { CrossSpawnSpawner } from "@opencode-ai/core/cross-spawn-spawner"
 import { AppFileSystem } from "@opencode-ai/core/filesystem"
 
 import { Instruction } from "../../src/session/instruction"
+import { InstructionParser } from "../../src/session/instruction-parser"
+import { InstructionReconciler } from "../../src/session/instruction-reconciler"
+import { InstructionRenderer } from "../../src/session/instruction-renderer"
+import { InstructionRouter } from "../../src/session/instruction-router"
 import type { MessageV2 } from "../../src/session/message-v2"
 import { MessageID, PartID, SessionID } from "../../src/session/schema"
 import { Global } from "@opencode-ai/core/global"
@@ -101,6 +105,110 @@ function loaded(filepath: string): SessionLegacy.WithParts[] {
     },
   ]
 }
+
+describe("structured instruction curation", () => {
+  test("extracts addressable IDs, replacement notes, and unstructured fallback text", () => {
+    const parsed = InstructionParser.parse([
+      {
+        filepath: "/repo/AGENTS.md",
+        order: 0,
+        content: [
+          "# Rules",
+          "- `USR.RULE.OLD`: Keep the old rule. replaced_by=USR.RULE.NEW",
+          "- `USR.RULE.NEW`: Keep the new rule.",
+          "",
+          "Unstructured guidance stays included when no ID is available.",
+        ].join("\n"),
+      },
+    ])
+
+    expect(parsed.entries.some((entry) => entry.id === "USR.RULE.OLD" && entry.replacedBy === "USR.RULE.NEW")).toBe(
+      true,
+    )
+    expect(parsed.entries.some((entry) => !entry.structured && entry.text.includes("Unstructured guidance"))).toBe(true)
+
+    const reconciled = InstructionReconciler.reconcile(parsed.entries)
+    expect(reconciled.entries.some((entry) => entry.id === "USR.RULE.OLD")).toBe(false)
+    expect(reconciled.entries.some((entry) => entry.id === "USR.RULE.NEW")).toBe(true)
+    expect(reconciled.replacementSuppressions).toBe(1)
+  })
+
+  test("uses narrower same-ID entries and preserves source order for remaining rules", () => {
+    const parsed = InstructionParser.parse([
+      { filepath: "/home/AGENTS.md", order: 0, content: "- `USR.RULE.GREEN_BUILD`: Run every build." },
+      { filepath: "/repo/AGENTS.md", order: 1, content: "- `USR.RULE.GREEN_BUILD`: Run the repo build." },
+      { filepath: "/repo/pkg/AGENTS.md", order: 2, content: "- `PKG.RULE.TESTS`: Run package tests." },
+    ])
+
+    const reconciled = InstructionReconciler.reconcile(parsed.entries)
+    expect(reconciled.sameIdOverrides).toBe(1)
+    expect(reconciled.entries.flatMap((entry) => (entry.id ? [entry.id] : []))).toEqual([
+      "USR.RULE.GREEN_BUILD",
+      "PKG.RULE.TESTS",
+    ])
+    expect(reconciled.entries[0].text).toContain("repo build")
+  })
+
+  test("routes test, PR, git, and mixed task domains conservatively", () => {
+    const parsed = InstructionParser.parse([
+      { filepath: "/repo/AGENTS.md", order: 0, content: "- `VER.RULE.TESTS`: Run unit tests." },
+      { filepath: "/repo/AGENTS.md", order: 0, content: "- `PR.RULE.REVIEW`: Audit PR review threads." },
+      { filepath: "/repo/AGENTS.md", order: 0, content: "- `GIT.RULE.WORKTREE`: Use worktrees." },
+    ])
+    const reconciled = InstructionReconciler.reconcile(parsed.entries)
+
+    expect(
+      InstructionRouter.route(reconciled.entries, "add unit test coverage").selected.map((entry) => entry.id),
+    ).toEqual(["VER.RULE.TESTS"])
+    expect(
+      InstructionRouter.route(reconciled.entries, "prepare a PR review closeout").selected.map((entry) => entry.id),
+    ).toEqual(["PR.RULE.REVIEW"])
+    expect(
+      InstructionRouter.route(reconciled.entries, "create a git worktree branch").selected.map((entry) => entry.id),
+    ).toEqual(["GIT.RULE.WORKTREE"])
+    expect(
+      InstructionRouter.route(reconciled.entries, "create a worktree and run unit tests").selected.map(
+        (entry) => entry.id,
+      ),
+    ).toEqual(["VER.RULE.TESTS", "GIT.RULE.WORKTREE"])
+  })
+
+  test("keeps user-level rules selected across routed task domains", () => {
+    const parsed = InstructionParser.parse([
+      {
+        filepath: "/home/AGENTS.md",
+        order: 0,
+        content: "- `USR.RULE.GREEN_BUILD`: Tasks must conclude with the required passing build.",
+      },
+      { filepath: "/repo/AGENTS.md", order: 1, content: "- `PR.RULE.REVIEW`: Audit PR review threads." },
+    ])
+    const reconciled = InstructionReconciler.reconcile(parsed.entries)
+
+    expect(
+      InstructionRouter.route(reconciled.entries, "prepare a PR review closeout").selected.map((entry) => entry.id),
+    ).toEqual(["USR.RULE.GREEN_BUILD", "PR.RULE.REVIEW"])
+  })
+
+  test("renders raw fallback blocks or curated compact blocks based on mode", () => {
+    const sources = [
+      {
+        filepath: "/repo/AGENTS.md",
+        order: 0,
+        content: ["- `VER.RULE.TESTS`: Run unit tests.", "- `PR.RULE.REVIEW`: Audit PR review threads."].join("\n"),
+      },
+    ]
+
+    const raw = InstructionRenderer.render(sources, { mode: "raw", prompt: "add unit tests" })
+    expect(raw.blocks).toEqual([`Instructions from: /repo/AGENTS.md\n${sources[0].content}`])
+
+    const curated = InstructionRenderer.render(sources, { mode: "curated", prompt: "add unit tests" })
+    expect(curated.blocks).toHaveLength(1)
+    expect(curated.blocks[0]).toContain("[VER.RULE.TESTS]")
+    expect(curated.blocks[0]).not.toContain("[PR.RULE.REVIEW]")
+    expect(curated.blocks[0]).toContain("<agent-instruction-telemetry>")
+    expect(curated.telemetry?.omittedIds).toEqual(["PR.RULE.REVIEW"])
+  })
+})
 
 describe("Instruction.resolve", () => {
   it.live("returns empty when AGENTS.md is at project root (already in systemPaths)", () =>
@@ -217,6 +325,35 @@ describe("Instruction.system", () => {
         expect(rules[0]).toBe(`Instructions from: ${path.join(globalTmp, "AGENTS.md")}\n# Global Instructions`)
         expect(rules[1]).toBe(`Instructions from: ${path.join(projectTmp, "AGENTS.md")}\n# Project Instructions`)
       }).pipe(provideInstance(projectTmp), provideInstruction({ home: globalTmp, config: globalTmp }))
+    }),
+  )
+
+  it.live("loads hierarchical project instructions broad-to-narrow and prefers AGENTS.md within a directory", () =>
+    Effect.gen(function* () {
+      const globalTmp = yield* tmpdirScoped()
+      const projectTmp = yield* tmpdirScoped({ git: true })
+      const nested = path.join(projectTmp, "pkg", "nested")
+      yield* writeFiles(projectTmp, {
+        "AGENTS.md": "# Root Instructions",
+        "pkg/CLAUDE.md": "# Package Claude",
+        "pkg/AGENTS.md": "# Package Agents",
+        "pkg/nested/AGENTS.md": "# Nested Agents",
+      })
+
+      yield* Effect.gen(function* () {
+        const svc = yield* Instruction.Service
+        const paths = Array.from(yield* svc.systemPaths())
+        expect(paths).toEqual([
+          path.join(projectTmp, "AGENTS.md"),
+          path.join(projectTmp, "pkg", "AGENTS.md"),
+          path.join(projectTmp, "pkg", "nested", "AGENTS.md"),
+        ])
+
+        const rules = yield* svc.system()
+        expect(rules).toHaveLength(3)
+        expect(rules[1]).toContain("Package Agents")
+        expect(rules.join("\n")).not.toContain("Package Claude")
+      }).pipe(provideInstance(nested), provideInstruction({ home: globalTmp, config: globalTmp }))
     }),
   )
 

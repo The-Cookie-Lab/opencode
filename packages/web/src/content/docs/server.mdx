@@ -199,6 +199,10 @@ field with exact per-category token counts:
     name: string   // e.g. "read", "write", "grep"
     tokens: number
   }>
+  agent_instructions?: Array<{
+    tokens: number
+    cached?: number
+  }>
   template_overhead: number  // chat template boilerplate tokens
   image_tokens: number       // 256 tokens/image by default
 }

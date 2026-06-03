@@ -377,6 +377,7 @@ export const dict = {
   "context.breakdown.other": "Other",
 
   "context.breakdown.detail.system_prompt": "System Prompt",
+  "context.breakdown.detail.agent_instructions": "Agent Instructions",
   "context.breakdown.detail.tool_definitions": "Tool Definitions",
   "context.breakdown.detail.user_messages": "User Messages",
   "context.breakdown.detail.assistant_messages": "Assistant Messages",

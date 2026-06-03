@@ -1493,6 +1493,15 @@ function AssistantMessage(props: { message: AssistantMessage; parts: Part[]; las
         segments.push(`tools ${Locale.number(toolTotal)}`)
       }
 
+      // Agent instruction tokens
+      if (ptd.agent_instructions?.length > 0) {
+        const instructionTotal = ptd.agent_instructions.reduce(
+          (sum: number, item: { tokens: number }) => sum + item.tokens,
+          0,
+        )
+        segments.push(`instr ${Locale.number(instructionTotal)}`)
+      }
+
       // Overhead
       if (ptd.template_overhead > 0) {
         segments.push(`oh ${Locale.number(ptd.template_overhead)}`)
