@@ -129,6 +129,14 @@ const session = {
   },
 } satisfies Session
 
+const contextTokenSummary = `${(
+  assistant.tokens.input +
+  assistant.tokens.output +
+  assistant.tokens.reasoning +
+  assistant.tokens.cache.read +
+  assistant.tokens.cache.write
+).toLocaleString()} tokens`
+
 function stepFinish(input: { id: string; prompt?: EnrichedStepFinishPart["promptTokensDetails"] }) {
   return {
     id: input.id,
@@ -258,7 +266,7 @@ describe("TUI context token details", () => {
     )
 
     expect(frame).toContain("Context")
-    expect(frame).toContain("1,570 tokens")
+    expect(frame).toContain(contextTokenSummary)
     expect(frame).toContain("input")
     expect(frame).toContain("tools")
     expect(frame).toContain("instructions")
@@ -269,7 +277,7 @@ describe("TUI context token details", () => {
     const frame = await renderFrame(() => sidebar([stepFinish({ id: "part_1" })]), { width: 42, height: 8 })
 
     expect(frame).toContain("Context")
-    expect(frame).toContain("1,570 tokens")
+    expect(frame).toContain(contextTokenSummary)
     expect(frame).not.toContain("input")
     expect(frame).not.toContain("instructions")
   })

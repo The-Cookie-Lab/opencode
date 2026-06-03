@@ -169,7 +169,8 @@ const context = createContext<{
   showTimestamps: () => boolean
   showDetails: () => boolean
   showAssistantMetadata: () => boolean
-  toggleAssistantMetadata: () => void
+  showAssistantContextDetails: () => boolean
+  toggleAssistantContextDetails: () => void
   showGenericToolOutput: () => boolean
   diffWrapMode: () => "word" | "none"
   providers: () => ReadonlyMap<string, Provider>
@@ -231,7 +232,11 @@ export function Session() {
   const showThinking = createMemo(() => true)
   const [timestamps, setTimestamps] = kv.signal<"hide" | "show">("timestamps", "hide")
   const [showDetails, setShowDetails] = kv.signal("tool_details_visibility", true)
-  const [showAssistantMetadata, setShowAssistantMetadata] = kv.signal("assistant_metadata_visibility", false)
+  const [showAssistantMetadata] = kv.signal("assistant_metadata_visibility", true)
+  const [showAssistantContextDetails, setShowAssistantContextDetails] = kv.signal(
+    "assistant_context_details_visibility",
+    false,
+  )
   const [showScrollbar, setShowScrollbar] = kv.signal("scrollbar_visible", false)
   const [diffWrapMode] = kv.signal<"word" | "none">("diff_wrap_mode", "word")
   const [_animationsEnabled, _setAnimationsEnabled] = kv.signal("animations_enabled", true)
@@ -1131,7 +1136,8 @@ export function Session() {
           showTimestamps,
           showDetails,
           showAssistantMetadata,
-          toggleAssistantMetadata: () => setShowAssistantMetadata((prev) => !prev),
+          showAssistantContextDetails,
+          toggleAssistantContextDetails: () => setShowAssistantContextDetails((prev) => !prev),
           showGenericToolOutput,
           diffWrapMode,
           providers,
@@ -1511,9 +1517,9 @@ function AssistantMessage(props: { message: AssistantMessage; parts: Part[]; las
             model={model()}
             duration={duration()}
             interrupted={props.message.error?.name === "MessageAbortedError"}
-            open={ctx.showAssistantMetadata()}
+            open={ctx.showAssistantContextDetails()}
             tokenSegments={tokenSegments()}
-            onToggle={ctx.toggleAssistantMetadata}
+            onToggle={ctx.toggleAssistantContextDetails}
             theme={theme}
           />
         </Match>
