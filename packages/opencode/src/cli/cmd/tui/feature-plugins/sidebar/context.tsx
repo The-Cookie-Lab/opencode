@@ -1,7 +1,8 @@
 import type { AssistantMessage } from "@opencode-ai/sdk/v2"
 import type { TuiPlugin, TuiPluginApi } from "@opencode-ai/plugin/tui"
 import type { InternalTuiPlugin } from "../../plugin/internal"
-import { createMemo } from "solid-js"
+import { createMemo, For, Show } from "solid-js"
+import { contextTokenDetails, latestStepFinish, sidebarContextDetailRows } from "../../util/context-details"
 
 const id = "internal:sidebar-context"
 
@@ -10,7 +11,7 @@ const money = new Intl.NumberFormat("en-US", {
   currency: "USD",
 })
 
-function View(props: { api: TuiPluginApi; session_id: string }) {
+export function ContextSidebarView(props: { api: TuiPluginApi; session_id: string }) {
   const theme = () => props.api.theme.current
   const msg = createMemo(() => props.api.state.session.messages(props.session_id))
   const session = createMemo(() => props.api.state.session.get(props.session_id))
@@ -22,6 +23,7 @@ function View(props: { api: TuiPluginApi; session_id: string }) {
       return {
         tokens: 0,
         percent: null,
+        details: undefined,
       }
     }
 
@@ -31,8 +33,10 @@ function View(props: { api: TuiPluginApi; session_id: string }) {
     return {
       tokens,
       percent: model?.limit.context ? Math.round((tokens / model.limit.context) * 100) : null,
+      details: contextTokenDetails(latestStepFinish(props.api.state.part(last.id))),
     }
   })
+  const detailRows = createMemo(() => sidebarContextDetailRows(state().details))
 
   return (
     <box>
@@ -42,6 +46,18 @@ function View(props: { api: TuiPluginApi; session_id: string }) {
       <text fg={theme().textMuted}>{state().tokens.toLocaleString()} tokens</text>
       <text fg={theme().textMuted}>{state().percent ?? 0}% used</text>
       <text fg={theme().textMuted}>{money.format(cost())} spent</text>
+      <Show when={detailRows().length > 0}>
+        <box marginTop={1}>
+          <For each={detailRows()}>
+            {(row) => (
+              <box flexDirection="row" gap={1}>
+                <text fg={theme().textMuted}>{row.label}</text>
+                <text fg={theme().text}>{row.value}</text>
+              </box>
+            )}
+          </For>
+        </box>
+      </Show>
     </box>
   )
 }
@@ -51,7 +67,7 @@ const tui: TuiPlugin = async (api) => {
     order: 100,
     slots: {
       sidebar_content(_ctx, props) {
-        return <View api={api} session_id={props.session_id} />
+        return <ContextSidebarView api={api} session_id={props.session_id} />
       },
     },
   })
