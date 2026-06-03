@@ -91,6 +91,7 @@ import { SessionRetry } from "@/session/retry"
 import { getRevertDiffFiles } from "../../util/revert-diff"
 import { OPENCODE_BASE_MODE, useBindings, useCommandShortcut, useOpencodeKeymap } from "../../keymap"
 import { PathFormatterProvider, usePathFormatter } from "../../context/path-format"
+import { assistantContextDetailSegments, contextTokenDetails, latestStepFinish } from "../../util/context-details"
 
 addDefaultParsers(parsers.parsers)
 
@@ -167,6 +168,9 @@ const context = createContext<{
   showThinking: () => boolean
   showTimestamps: () => boolean
   showDetails: () => boolean
+  showAssistantMetadata: () => boolean
+  showAssistantContextDetails: () => boolean
+  toggleAssistantContextDetails: () => void
   showGenericToolOutput: () => boolean
   diffWrapMode: () => "word" | "none"
   providers: () => ReadonlyMap<string, Provider>
@@ -228,7 +232,11 @@ export function Session() {
   const showThinking = createMemo(() => true)
   const [timestamps, setTimestamps] = kv.signal<"hide" | "show">("timestamps", "hide")
   const [showDetails, setShowDetails] = kv.signal("tool_details_visibility", true)
-  const [showAssistantMetadata, _setShowAssistantMetadata] = kv.signal("assistant_metadata_visibility", true)
+  const [showAssistantMetadata] = kv.signal("assistant_metadata_visibility", true)
+  const [showAssistantContextDetails, setShowAssistantContextDetails] = kv.signal(
+    "assistant_context_details_visibility",
+    false,
+  )
   const [showScrollbar, setShowScrollbar] = kv.signal("scrollbar_visible", false)
   const [diffWrapMode] = kv.signal<"word" | "none">("diff_wrap_mode", "word")
   const [_animationsEnabled, _setAnimationsEnabled] = kv.signal("animations_enabled", true)
@@ -1127,6 +1135,9 @@ export function Session() {
           showThinking,
           showTimestamps,
           showDetails,
+          showAssistantMetadata,
+          showAssistantContextDetails,
+          toggleAssistantContextDetails: () => setShowAssistantContextDetails((prev) => !prev),
           showGenericToolOutput,
           diffWrapMode,
           providers,
@@ -1451,65 +1462,9 @@ function AssistantMessage(props: { message: AssistantMessage; parts: Part[]; las
 
   const childShortcut = useCommandShortcut("session.child.first")
 
-  const stepFinish = createMemo(() => {
-    // Use the last step-finish part so multi-step (tool-call) sessions show
-    // the final step's data, which is most likely to carry promptTokensDetails.
-    const match = props.parts
-      .slice()
-      .reverse()
-      .find((p) => p.type === "step-finish")
-    return match as
-      | (Part & { tokens: { input: number; output: number; reasoning: number }; promptTokensDetails?: any })
-      | undefined
-  })
-
-  const tokenBreakdown = createMemo(() => {
-    const sf = stepFinish()
-    if (!sf) return null
-
-    const segments: string[] = []
-
-    // Input tokens (always shown)
-    const ptd = sf.promptTokensDetails
-    let inputStr = `${Locale.number(sf.tokens.input)}↑`
-    if (ptd) {
-      const cached = ptd.messages?.reduce((sum: number, m: { cached?: number }) => sum + (m.cached ?? 0), 0) ?? 0
-      if (cached > 0) inputStr += ` (${Locale.number(cached)}Δ)`
-    }
-    segments.push(inputStr)
-
-    // Output tokens (always shown)
-    segments.push(`${Locale.number(sf.tokens.output)}↓`)
-
-    // Reasoning tokens
-    if (sf.tokens.reasoning > 0) {
-      segments.push(`${Locale.number(sf.tokens.reasoning)}⊕`)
-    }
-
-    if (ptd) {
-      // Tool tokens
-      if (ptd.tools?.length > 0) {
-        const toolTotal = ptd.tools.reduce((sum: number, t: { tokens: number }) => sum + t.tokens, 0)
-        segments.push(`tools ${Locale.number(toolTotal)}`)
-      }
-
-      // Agent instruction tokens
-      if (ptd.agent_instructions?.length > 0) {
-        const instructionTotal = ptd.agent_instructions.reduce(
-          (sum: number, item: { tokens: number }) => sum + item.tokens,
-          0,
-        )
-        segments.push(`instr ${Locale.number(instructionTotal)}`)
-      }
-
-      // Overhead
-      if (ptd.template_overhead > 0) {
-        segments.push(`oh ${Locale.number(ptd.template_overhead)}`)
-      }
-    }
-
-    return `▸ ${segments.join(" · ")}`
-  })
+  const tokenSegments = createMemo(() =>
+    assistantContextDetailSegments(contextTokenDetails(latestStepFinish(props.parts))),
+  )
 
   return (
     <>
@@ -1552,36 +1507,76 @@ function AssistantMessage(props: { message: AssistantMessage; parts: Part[]; las
       </Show>
       <Switch>
         <Match when={props.last || final() || props.message.error?.name === "MessageAbortedError"}>
-          <box paddingLeft={3}>
-            <text marginTop={1}>
-              <span
-                style={{
-                  fg:
-                    props.message.error?.name === "MessageAbortedError"
-                      ? theme.textMuted
-                      : local.agent.color(props.message.agent),
-                }}
-              >
-                ▣{" "}
-              </span>{" "}
-              <span style={{ fg: theme.text }}>{Locale.titlecase(props.message.mode)}</span>
-              <span style={{ fg: theme.textMuted }}> · {model()}</span>
-              <Show when={duration()}>
-                <span style={{ fg: theme.textMuted }}> · {Locale.duration(duration())}</span>
-              </Show>
-              <Show when={props.message.error?.name === "MessageAbortedError"}>
-                <span style={{ fg: theme.textMuted }}> · interrupted</span>
-              </Show>
-            </text>
-            <Show when={tokenBreakdown()}>
-              <text>
-                <span style={{ fg: theme.textMuted }}>{tokenBreakdown()}</span>
-              </text>
-            </Show>
-          </box>
+          <AssistantMetadataFooter
+            accent={
+              props.message.error?.name === "MessageAbortedError"
+                ? theme.textMuted
+                : local.agent.color(props.message.agent)
+            }
+            mode={props.message.mode}
+            model={model()}
+            duration={duration()}
+            interrupted={props.message.error?.name === "MessageAbortedError"}
+            open={ctx.showAssistantContextDetails()}
+            tokenSegments={tokenSegments()}
+            onToggle={ctx.toggleAssistantContextDetails}
+            theme={theme}
+          />
         </Match>
       </Switch>
     </>
+  )
+}
+
+export function AssistantMetadataFooter(props: {
+  accent: RGBA
+  mode: string
+  model: string
+  duration?: number
+  interrupted?: boolean
+  open: boolean
+  tokenSegments: readonly string[]
+  onToggle: () => void
+  theme: {
+    text: RGBA
+    textMuted: RGBA
+  }
+}) {
+  const toggleable = createMemo(() => props.tokenSegments.length > 0)
+
+  return (
+    <box paddingLeft={3}>
+      <box flexDirection="row">
+        <text marginTop={1}>
+          <span style={{ fg: props.accent }}>▣ </span>{" "}
+          <span style={{ fg: props.theme.text }}>{Locale.titlecase(props.mode)}</span>
+          <span style={{ fg: props.theme.textMuted }}> · {props.model}</span>
+          <Show when={props.duration}>
+            {(duration) => <span style={{ fg: props.theme.textMuted }}> · {Locale.duration(duration())}</span>}
+          </Show>
+          <Show when={props.interrupted}>
+            <span style={{ fg: props.theme.textMuted }}> · interrupted</span>
+          </Show>
+        </text>
+        <Show when={toggleable()}>
+          <text
+            marginTop={1}
+            fg={props.theme.textMuted}
+            onMouseUp={() => {
+              props.onToggle()
+            }}
+          >
+            {" "}
+            · {props.open ? "▾" : "▸"}
+          </text>
+        </Show>
+      </box>
+      <Show when={props.open && props.tokenSegments.length > 0}>
+        <text>
+          <span style={{ fg: props.theme.textMuted }}>{props.tokenSegments.join(" · ")}</span>
+        </text>
+      </Show>
+    </box>
   )
 }
 
