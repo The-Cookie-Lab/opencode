@@ -55,6 +55,10 @@ import { Reference } from "@/reference/reference"
 import { BackgroundJob } from "@/background/job"
 import { RuntimeFlags } from "@/effect/runtime-flags"
 import { ProviderV2 } from "@opencode-ai/core/provider"
+import { ContextIntel } from "@/context-intel"
+import { ProjectDossierTool } from "./project_dossier"
+import { SemanticSearchTool } from "./semantic_search"
+import { ViewOutlineTool } from "./view_outline"
 
 const log = Log.create({ service: "tool.registry" })
 
@@ -111,6 +115,7 @@ export const layer: Layer.Layer<
   | Truncate.Service
   | RuntimeFlags.Service
   | Database.Service
+  | ContextIntel.Service
 > = Layer.effect(
   Service,
   Effect.gen(function* () {
@@ -139,6 +144,9 @@ export const layer: Layer.Layer<
     const greptool = yield* GrepTool
     const patchtool = yield* ApplyPatchTool
     const skilltool = yield* SkillTool
+    const projectDossier = yield* ProjectDossierTool
+    const semanticSearch = yield* SemanticSearchTool
+    const viewOutline = yield* ViewOutlineTool
     const agent = yield* Agent.Service
 
     const state = yield* InstanceState.make<State>(
@@ -248,6 +256,9 @@ export const layer: Layer.Layer<
           question: Tool.init(question),
           lsp: Tool.init(lsptool),
           plan: Tool.init(plan),
+          project_dossier: Tool.init(projectDossier),
+          semantic_search: Tool.init(semanticSearch),
+          view_outline: Tool.init(viewOutline),
         })
 
         return {
@@ -265,6 +276,10 @@ export const layer: Layer.Layer<
             tool.fetch,
             tool.todo,
             tool.search,
+            ...(flags.experimentalMacroTools || flags.experimentalContextTools
+              ? [tool.project_dossier, tool.view_outline]
+              : []),
+            ...(flags.experimentalMacroTools || flags.experimentalSemanticSearch ? [tool.semantic_search] : []),
             ...(flags.experimentalScout ? [tool.repo_clone, tool.repo_overview] : []),
             tool.skill,
             tool.patch,
@@ -379,6 +394,7 @@ export const layer: Layer.Layer<
 export const defaultLayer = Layer.suspend(() =>
   layer
     .pipe(
+      Layer.provide(ContextIntel.layer),
       Layer.provide(Config.defaultLayer),
       Layer.provide(Plugin.defaultLayer),
       Layer.provide(Question.defaultLayer),
@@ -396,11 +412,14 @@ export const defaultLayer = Layer.suspend(() =>
       Layer.provide(EventV2Bridge.defaultLayer),
       Layer.provide(FetchHttpClient.layer),
       Layer.provide(Format.defaultLayer),
+    )
+    .pipe(
       Layer.provide(CrossSpawnSpawner.defaultLayer),
       Layer.provide(Ripgrep.defaultLayer),
       Layer.provide(Truncate.defaultLayer),
-    )
-    .pipe(Layer.provide(Database.defaultLayer), Layer.provide(RuntimeFlags.defaultLayer)),
+      Layer.provide(Database.defaultLayer),
+      Layer.provide(RuntimeFlags.defaultLayer),
+    ),
 )
 
 function isZodType(value: unknown): value is z.ZodType {

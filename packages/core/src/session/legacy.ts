@@ -222,6 +222,7 @@ export const StepStartPart = Schema.Struct({
   ...partBase,
   type: Schema.Literal("step-start"),
   snapshot: Schema.optional(Schema.String),
+  metadata: Schema.optional(Schema.Record(Schema.String, Schema.Unknown)),
 }).annotate({ identifier: "StepStartPart" })
 export type StepStartPart = Types.DeepMutable<Schema.Schema.Type<typeof StepStartPart>>
 

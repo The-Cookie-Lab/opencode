@@ -257,6 +257,66 @@ it.live("session.processor effect tests capture llm input cleanly", () =>
   ),
 )
 
+it.live("persists context plan only on the first step-start part", () =>
+  provideTmpdirServer(
+    ({ dir, llm }) =>
+      Effect.gen(function* () {
+        const { processors, session, provider } = yield* boot()
+
+        yield* llm.text("hello")
+        yield* llm.text("again")
+
+        const chat = yield* session.create({})
+        const parent = yield* user(chat.id, "hi")
+        const msg = yield* assistant(chat.id, parent.id, path.resolve(dir))
+        const mdl = yield* provider.getModel(ref.providerID, ref.modelID)
+        const contextPlan = {
+          mode: "shadow" as const,
+          decision: "shadow" as const,
+          trigger: "ratio" as const,
+          ratio: 0.6,
+          threshold: 0.5,
+          projectedSavingsTokens: 10,
+          ledger: [],
+        }
+        const handle = yield* processors.create({
+          assistantMessage: msg,
+          sessionID: chat.id,
+          model: mdl,
+          contextPlan,
+        })
+
+        const input = {
+          user: {
+            id: parent.id,
+            sessionID: chat.id,
+            role: "user",
+            time: parent.time,
+            agent: parent.agent,
+            model: { providerID: ref.providerID, modelID: ref.modelID },
+          } satisfies SessionLegacy.User,
+          sessionID: chat.id,
+          model: mdl,
+          agent: agent(),
+          system: [],
+          messages: [{ role: "user", content: "hi" }],
+          tools: {},
+        } satisfies LLM.StreamInput
+
+        yield* handle.process(input)
+        yield* handle.process(input)
+        const starts = (yield* MessageV2.parts(msg.id)).filter(
+          (part): part is SessionLegacy.StepStartPart => part.type === "step-start",
+        )
+
+        expect(starts).toHaveLength(2)
+        expect(starts[0]?.metadata?.contextPlan).toEqual(contextPlan)
+        expect(starts[1]?.metadata?.contextPlan).toBeUndefined()
+      }),
+    { config: (url) => providerCfg(url) },
+  ),
+)
+
 it.live("session.processor effect tests preserve text start time", () =>
   provideTmpdirServer(
     ({ dir, llm }) =>

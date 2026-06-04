@@ -351,6 +351,14 @@ Macro-tool changes should run `bun run macro-quality -- --changed-from
 origin/dev --mode local` from `packages/opencode`; CI runs the same framework in
 blocking mode and stores `.artifacts/macro-quality/report.json`.
 
+`opencode stats --context` adds a `CONTEXT INTELLIGENCE BURN-IN` section to the
+normal stats output. This is telemetry only: the shadow planner records
+`step-start.metadata.contextPlan` for evaluated assistant turns, but it does not
+change prompt text, compaction thresholds, active pruning, `/compact`, or tool
+defaults. Treat promotion as data-driven: macro adoption should rise, primitive
+read/search pressure should fall, `promptTokensDetails` coverage should be
+healthy, and re-read-after-drop plus overflow-proximity signals should stay low.
+
 `external_directory` patterns are filesystem paths (use `~/`, absolute paths,
 or globs like `~/projects/**`).
 
