@@ -310,6 +310,9 @@ export type StepStartPart = {
   messageID: string
   type: "step-start"
   snapshot?: string
+  metadata?: {
+    [key: string]: unknown
+  }
 }
 
 export type StepFinishPart = {

@@ -189,8 +189,8 @@ describe("TUI context token details", () => {
     const last = stepFinish({
       id: "part_2",
       prompt: {
-        messages: [{ tokens: 900, cached: 100 }],
-        tools: [{ tokens: 300 }],
+        messages: [{ role: "user", tokens: 900, cached: 100 }],
+        tools: [{ name: "read", tokens: 300 }],
         agent_instructions: [{ tokens: 200, cached: 25 }],
         template_overhead: 40,
         image_tokens: 12,
@@ -254,8 +254,8 @@ describe("TUI context token details", () => {
           stepFinish({
             id: "part_1",
             prompt: {
-              messages: [{ tokens: 900, cached: 100 }],
-              tools: [{ tokens: 300 }],
+              messages: [{ role: "user", tokens: 900, cached: 100 }],
+              tools: [{ name: "read", tokens: 300 }],
               agent_instructions: [{ tokens: 200 }],
               template_overhead: 40,
               image_tokens: 0,

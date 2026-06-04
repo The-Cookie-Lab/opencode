@@ -56,6 +56,8 @@ import { awaitWithTimeout, pollWithTimeout, testEffect } from "../lib/effect"
 import { reply, TestLLMServer } from "../lib/llm-server"
 import { RuntimeFlags } from "@/effect/runtime-flags"
 import { ProviderV2 } from "@opencode-ai/core/provider"
+import { ContextIntel } from "@/context-intel"
+import { ContextPlanner, type ContextPlan } from "@/session/context-planner"
 
 void Log.init({ print: false })
 
@@ -158,14 +160,19 @@ const run = SessionRunState.layer.pipe(Layer.provide(status))
 const infra = Layer.mergeAll(NodeFileSystem.layer, CrossSpawnSpawner.defaultLayer)
 
 const processorCreateStarted: Array<() => void> = []
+const processorCreateInputs: Array<Parameters<SessionProcessor.Interface["create"]>[0]> = []
 const blockingProcessor = Layer.succeed(
   SessionProcessor.Service,
   SessionProcessor.Service.of({
-    create: () => Effect.sync(() => processorCreateStarted.shift()?.()).pipe(Effect.andThen(Effect.never)),
+    create: (input) =>
+      Effect.sync(() => {
+        processorCreateInputs.push(input)
+        processorCreateStarted.shift()?.()
+      }).pipe(Effect.andThen(Effect.never)),
   }),
 )
 
-function makePrompt(input?: { processor?: "blocking" }) {
+function makePrompt(input?: { processor?: "blocking"; planner?: Layer.Layer<ContextPlanner.Service> }) {
   const deps = Layer.mergeAll(
     Session.defaultLayer,
     Snapshot.defaultLayer,
@@ -188,6 +195,7 @@ function makePrompt(input?: { processor?: "blocking" }) {
   const question = Question.layer.pipe(Layer.provideMerge(deps))
   const todo = Todo.layer.pipe(Layer.provideMerge(deps))
   const registry = ToolRegistry.layer.pipe(
+    Layer.provide(ContextIntel.layer),
     Layer.provide(Skill.defaultLayer),
     Layer.provide(FetchHttpClient.layer),
     Layer.provide(CrossSpawnSpawner.defaultLayer),
@@ -228,23 +236,45 @@ function makePrompt(input?: { processor?: "blocking" }) {
     Layer.provideMerge(trunc),
     Layer.provide(Instruction.defaultLayer),
     Layer.provide(SystemPrompt.defaultLayer),
+    Layer.provide(input?.planner ?? ContextPlanner.layer),
     Layer.provide(RuntimeFlags.layer({ experimentalEventSystem: true })),
     Layer.provideMerge(deps),
     Layer.provide(summary),
   )
 }
 
-function makeHttp(input?: { processor?: "blocking" }) {
+function makeHttp(input?: { processor?: "blocking"; planner?: Layer.Layer<ContextPlanner.Service> }) {
   return Layer.mergeAll(TestLLMServer.layer, makePrompt(input))
 }
 
-function makeHttpNoLLMServer(input?: { processor?: "blocking" }) {
+function makeHttpNoLLMServer(input?: { processor?: "blocking"; planner?: Layer.Layer<ContextPlanner.Service> }) {
   return makePrompt(input)
 }
 
 const it = testEffect(makeHttp())
 const noLLMServer = testEffect(makeHttpNoLLMServer())
 const raceNoLLMServer = testEffect(makeHttpNoLLMServer({ processor: "blocking" }))
+const handoffPlan: ContextPlan = {
+  mode: "shadow",
+  decision: "shadow",
+  trigger: "ratio",
+  ratio: 0.6,
+  threshold: 0.5,
+  projectedSavingsTokens: 100,
+  ledger: [],
+}
+const plannerInputs: Array<Parameters<ContextPlanner.Interface["evaluate"]>[0]> = []
+const handoffPlanner = Layer.succeed(
+  ContextPlanner.Service,
+  ContextPlanner.Service.of({
+    evaluate: (input) =>
+      Effect.sync(() => {
+        plannerInputs.push(input)
+        return handoffPlan
+      }),
+  }),
+)
+const plannerHandoffNoLLMServer = testEffect(makeHttpNoLLMServer({ processor: "blocking", planner: handoffPlanner }))
 const unix = process.platform !== "win32" ? it.instance : it.instance.skip
 const unixNoLLMServer = process.platform !== "win32" ? noLLMServer.instance : noLLMServer.instance.skip
 
@@ -1007,6 +1037,49 @@ raceNoLLMServer.instance(
       }
     }),
   { config: cfg },
+  3_000,
+)
+
+plannerHandoffNoLLMServer.instance(
+  "passes shadow context plan into processor without creating compaction work",
+  () =>
+    Effect.gen(function* () {
+      processorCreateStarted.length = 0
+      processorCreateInputs.length = 0
+      plannerInputs.length = 0
+      yield* Effect.addFinalizer(() =>
+        Effect.sync(() => {
+          processorCreateStarted.length = 0
+          processorCreateInputs.length = 0
+          plannerInputs.length = 0
+        }),
+      )
+
+      const prompt = yield* SessionPrompt.Service
+      const sessions = yield* Session.Service
+      const chat = yield* sessions.create({ title: "Planner handoff" })
+      yield* prompt.prompt({
+        sessionID: chat.id,
+        agent: "build",
+        noReply: true,
+        parts: [{ type: "text", text: "trigger planner" }],
+      })
+
+      const created = defer<void>()
+      processorCreateStarted.push(created.resolve)
+      const fiber = yield* prompt.loop({ sessionID: chat.id }).pipe(Effect.forkChild)
+      yield* Effect.promise(() => created.promise)
+
+      expect(plannerInputs).toHaveLength(1)
+      expect(processorCreateInputs).toHaveLength(1)
+      expect(processorCreateInputs[0]?.contextPlan).toEqual(handoffPlan)
+
+      const messages = yield* sessions.messages({ sessionID: chat.id })
+      expect(messages.flatMap((message) => message.parts).some((part) => part.type === "compaction")).toBe(false)
+
+      yield* prompt.cancel(chat.id)
+      yield* Fiber.await(fiber)
+    }),
   3_000,
 )
 

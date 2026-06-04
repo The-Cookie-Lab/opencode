@@ -36,6 +36,7 @@ import { ToolJsonSchema } from "@/tool/json-schema"
 import { MessageID, SessionID } from "@/session/schema"
 import { RuntimeFlags } from "@/effect/runtime-flags"
 import { ProviderV2 } from "@opencode-ai/core/provider"
+import { ContextIntel } from "@/context-intel"
 
 const node = CrossSpawnSpawner.defaultLayer
 const configLayer = TestConfig.layer({
@@ -50,6 +51,7 @@ type RegistryLayerOptions = {
 const registryLayer = (opts: RegistryLayerOptions = {}) =>
   ToolRegistry.layer
     .pipe(
+      Layer.provide(ContextIntel.layer),
       Layer.provide(configLayer),
       Layer.provide(opts.plugin ?? Plugin.defaultLayer),
       Layer.provide(Question.defaultLayer),
@@ -67,11 +69,13 @@ const registryLayer = (opts: RegistryLayerOptions = {}) =>
       Layer.provide(EventV2Bridge.defaultLayer),
       Layer.provide(FetchHttpClient.layer),
       Layer.provide(Format.defaultLayer),
+    )
+    .pipe(
       Layer.provide(Layer.mergeAll(node, Database.defaultLayer)),
       Layer.provide(Ripgrep.defaultLayer),
       Layer.provide(Truncate.defaultLayer),
+      Layer.provide(RuntimeFlags.layer(opts.flags ?? {})),
     )
-    .pipe(Layer.provide(RuntimeFlags.layer(opts.flags ?? {})))
 
 // Fake Plugin.Service that returns a single plugin whose `tool` map contains
 // one definition with `args: undefined`. Used to exercise the plugin entry
@@ -101,6 +105,15 @@ const it = testEffect(Layer.mergeAll(registryLayer(), node, Agent.defaultLayer))
 const scout = testEffect(
   Layer.mergeAll(registryLayer({ flags: { experimentalScout: true } }), node, Agent.defaultLayer),
 )
+const macro = testEffect(
+  Layer.mergeAll(registryLayer({ flags: { experimentalMacroTools: true } }), node, Agent.defaultLayer),
+)
+const contextTools = testEffect(
+  Layer.mergeAll(registryLayer({ flags: { experimentalContextTools: true } }), node, Agent.defaultLayer),
+)
+const semantic = testEffect(
+  Layer.mergeAll(registryLayer({ flags: { experimentalSemanticSearch: true } }), node, Agent.defaultLayer),
+)
 const withBrokenPlugin = testEffect(
   Layer.mergeAll(registryLayer({ plugin: brokenPluginLayer }), node, Agent.defaultLayer),
 )
@@ -117,6 +130,9 @@ describe("tool.registry", () => {
 
       expect(ids).not.toContain("repo_clone")
       expect(ids).not.toContain("repo_overview")
+      expect(ids).not.toContain("project_dossier")
+      expect(ids).not.toContain("view_outline")
+      expect(ids).not.toContain("semantic_search")
     }),
   )
 
@@ -127,6 +143,39 @@ describe("tool.registry", () => {
 
       expect(ids).toContain("repo_clone")
       expect(ids).toContain("repo_overview")
+    }),
+  )
+
+  macro.instance("shows all macro context tools when macro tools are enabled", () =>
+    Effect.gen(function* () {
+      const registry = yield* ToolRegistry.Service
+      const ids = yield* registry.ids()
+
+      expect(ids).toContain("project_dossier")
+      expect(ids).toContain("view_outline")
+      expect(ids).toContain("semantic_search")
+    }),
+  )
+
+  contextTools.instance("shows dossier and outline when context tools are enabled", () =>
+    Effect.gen(function* () {
+      const registry = yield* ToolRegistry.Service
+      const ids = yield* registry.ids()
+
+      expect(ids).toContain("project_dossier")
+      expect(ids).toContain("view_outline")
+      expect(ids).not.toContain("semantic_search")
+    }),
+  )
+
+  semantic.instance("shows semantic search without dossier and outline when semantic search is enabled", () =>
+    Effect.gen(function* () {
+      const registry = yield* ToolRegistry.Service
+      const ids = yield* registry.ids()
+
+      expect(ids).toContain("semantic_search")
+      expect(ids).not.toContain("project_dossier")
+      expect(ids).not.toContain("view_outline")
     }),
   )
 

@@ -520,6 +520,9 @@ export type StepStartPart = {
   messageID: string
   type: "step-start"
   snapshot?: string
+  metadata?: {
+    [key: string]: unknown
+  }
 }
 
 export type StepFinishPart = {
@@ -539,6 +542,23 @@ export type StepFinishPart = {
       read: number
       write: number
     }
+  }
+  promptTokensDetails?: {
+    messages: Array<{
+      role: string
+      tokens: number
+      cached?: number
+    }>
+    tools: Array<{
+      name: string
+      tokens: number
+    }>
+    agent_instructions?: Array<{
+      tokens: number
+      cached?: number
+    }>
+    template_overhead: number
+    image_tokens: number
   }
 }
 

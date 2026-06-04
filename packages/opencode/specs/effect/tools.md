@@ -34,6 +34,37 @@ The compact surface keeps `bash`, `read`, support tools such as `task`, `skill`,
 - `write_patch` uses Desktop Commander-style exact search/replace semantics: line-ending normalization, an expected replacement count, all-or-nothing mutation, and nearest-match feedback when exact text is missing.
 - Built-in tool descriptions become compact imperative strings and their JSON Schema metadata drops prose fields. Custom and plugin tools are left unchanged.
 
+## Experimental macro context tools
+
+The Phase 1 macro context tools stay hidden by default and are registered only
+under their documented opt-in flags:
+
+- `OPENCODE_EXPERIMENTAL_MACRO_TOOLS=1` enables `project_dossier`,
+  `view_outline`, and `semantic_search`.
+- `OPENCODE_EXPERIMENTAL_CONTEXT_TOOLS=1` enables `project_dossier` and
+  `view_outline`.
+- `OPENCODE_EXPERIMENTAL_SEMANTIC_SEARCH=1` enables `semantic_search`.
+
+These flags add the macro tools alongside the primitive read/search tools; they
+do not replace tool defaults. `ContextIntel.Service` is part of the registry
+graph whenever those tools are initialized, so macro telemetry and adoption can
+be measured through the same production service path.
+
+## Context intelligence burn-in
+
+`opencode stats --context` appends a `CONTEXT INTELLIGENCE BURN-IN` section to
+the normal stats report. The command reuses the existing session/message
+traversal and summarizes shadow planner metadata, macro adoption, primitive
+discovery, semantic-search cold/warm behavior, prompt pressure, projected
+savings, and data gaps.
+
+The burn-in planner is shadow-only. It can persist a compact
+`step-start.metadata.contextPlan` record for observability, but it must not
+change prompt content, compaction thresholds, tool defaults, `/compact`, or
+active message pruning. Promotion beyond shadow mode requires sustained macro
+adoption, lower primitive read/search pressure, usable `promptTokensDetails`
+coverage, and no increase in re-read-after-drop or overflow-proximity signals.
+
 ## Tests
 
 Tool tests should use the existing Effect helpers in `packages/opencode/test/lib/effect.ts`:

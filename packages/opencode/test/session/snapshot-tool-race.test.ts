@@ -63,6 +63,8 @@ import { Format } from "../../src/format"
 import { Reference } from "../../src/reference/reference"
 import { RepositoryCache } from "../../src/reference/repository-cache"
 import { RuntimeFlags } from "@/effect/runtime-flags"
+import { ContextIntel } from "@/context-intel"
+import { ContextPlanner } from "@/session/context-planner"
 
 void Log.init({ print: false })
 
@@ -136,6 +138,7 @@ function makeHttp() {
   const question = Question.layer.pipe(Layer.provideMerge(deps))
   const todo = Todo.layer.pipe(Layer.provideMerge(deps))
   const registry = ToolRegistry.layer.pipe(
+    Layer.provide(ContextIntel.layer),
     Layer.provide(Skill.defaultLayer),
     Layer.provide(FetchHttpClient.layer),
     Layer.provide(CrossSpawnSpawner.defaultLayer),
@@ -169,6 +172,7 @@ function makeHttp() {
       Layer.provide(Image.defaultLayer),
       Layer.provide(Reference.defaultLayer),
       Layer.provide(SessionSummary.defaultLayer),
+      Layer.provide(ContextPlanner.defaultLayer),
       Layer.provideMerge(run),
       Layer.provideMerge(compact),
       Layer.provideMerge(proc),

@@ -5,10 +5,12 @@ type StepFinishPart = Extract<Part, { type: "step-finish" }>
 
 export type PromptTokensDetails = {
   messages?: readonly {
+    role?: string
     tokens?: number
     cached?: number
   }[]
   tools?: readonly {
+    name?: string
     tokens?: number
   }[]
   agent_instructions?: readonly {

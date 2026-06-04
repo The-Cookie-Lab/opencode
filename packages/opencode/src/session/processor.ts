@@ -29,6 +29,7 @@ import { ProviderV2 } from "@opencode-ai/core/provider"
 import * as DateTime from "effect/DateTime"
 import { RuntimeFlags } from "@/effect/runtime-flags"
 import { Usage, type LLMEvent } from "@opencode-ai/llm"
+import type { ContextPlanner } from "./context-planner"
 
 const DOOM_LOOP_THRESHOLD = 3
 const log = Log.create({ service: "session.processor" })
@@ -57,6 +58,7 @@ type Input = {
   assistantMessage: SessionLegacy.Assistant
   sessionID: SessionID
   model: Provider.Model
+  contextPlan?: ContextPlanner.ContextPlan
 }
 
 export interface Interface {
@@ -77,6 +79,7 @@ interface ProcessorContext extends Input {
   snapshot: string | undefined
   blocked: boolean
   needsCompaction: boolean
+  contextPlanWritten: boolean
   currentText: SessionLegacy.TextPart | undefined
   reasoningMap: Record<string, SessionLegacy.ReasoningPart>
 }
@@ -117,6 +120,7 @@ export const layer = Layer.effect(
         snapshot: initialSnapshot,
         blocked: false,
         needsCompaction: false,
+        contextPlanWritten: false,
         currentText: undefined,
         reasoningMap: {},
       }
@@ -544,12 +548,16 @@ export const layer = Layer.effect(
                 })
               }
             }
+            const metadata =
+              input.contextPlan && !ctx.contextPlanWritten ? { contextPlan: input.contextPlan } : undefined
+            ctx.contextPlanWritten = true
             yield* session.updatePart({
               id: PartID.ascending(),
               messageID: ctx.assistantMessage.id,
               sessionID: ctx.sessionID,
               snapshot: ctx.snapshot,
               type: "step-start",
+              metadata,
             })
             return
 

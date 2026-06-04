@@ -6,6 +6,12 @@ import { Database } from "@opencode-ai/core/database/database"
 import { SessionTable } from "@opencode-ai/core/session/sql"
 import { Project } from "@/project/project"
 import { InstanceRef } from "@/effect/instance-ref"
+import {
+  aggregateContextIntelligence,
+  collectTurnSample,
+  renderContextIntelligenceSummary,
+  type TurnSample,
+} from "@/quality/context-intelligence"
 
 interface SessionStats {
   totalSessions: number
@@ -44,6 +50,7 @@ interface SessionStats {
   costPerDay: number
   tokensPerSession: number
   medianTokensPerSession: number
+  contextSamples: TurnSample[]
 }
 
 export const StatsCommand = effectCmd({
@@ -65,6 +72,10 @@ export const StatsCommand = effectCmd({
       .option("project", {
         describe: "filter by project (default: all projects, empty string: current project)",
         type: "string",
+      })
+      .option("context", {
+        describe: "show context intelligence burn-in telemetry",
+        type: "boolean",
       }),
   handler: Effect.fn("Cli.stats")(function* (args) {
     const ctx = yield* InstanceRef
@@ -77,6 +88,7 @@ export const StatsCommand = effectCmd({
       modelLimit = args.models
     }
     displayStats(stats, args.tools, modelLimit)
+    if (args.context) console.log(renderContextIntelligenceSummary(aggregateContextIntelligence(stats.contextSamples)))
   }),
 })
 
@@ -144,6 +156,7 @@ const aggregateSessionStats = Effect.fn("Cli.stats.aggregate")(function* (
     costPerDay: 0,
     tokensPerSession: 0,
     medianTokensPerSession: 0,
+    contextSamples: [],
   }
 
   if (filteredSessions.length > 1000) {
@@ -180,7 +193,10 @@ const aggregateSessionStats = Effect.fn("Cli.stats.aggregate")(function* (
           }
         > = {}
 
-        for (const message of messages) {
+        const orderedMessages = messages.toSorted((a, b) => a.info.id.localeCompare(b.info.id))
+        const contextSamples: TurnSample[] = []
+        for (let index = 0; index < orderedMessages.length; index++) {
+          const message = orderedMessages[index]!
           if (message.info.role === "assistant") {
             const modelKey = `${message.info.providerID}/${message.info.modelID}`
             if (!sessionModelUsage[modelKey]) {
@@ -207,6 +223,8 @@ const aggregateSessionStats = Effect.fn("Cli.stats.aggregate")(function* (
               sessionToolUsage[part.tool] = (sessionToolUsage[part.tool] || 0) + 1
             }
           }
+          const sample = collectTurnSample({ message, previous: orderedMessages[index - 1] })
+          if (sample) contextSamples.push(sample)
         }
 
         return {
@@ -221,6 +239,7 @@ const aggregateSessionStats = Effect.fn("Cli.stats.aggregate")(function* (
             sessionTokens.cache.write,
           sessionToolUsage,
           sessionModelUsage,
+          contextSamples,
           earliestTime: cutoffTime > 0 ? session.time.updated : session.time.created,
           latestTime: session.time.updated,
         }
@@ -232,6 +251,7 @@ const aggregateSessionStats = Effect.fn("Cli.stats.aggregate")(function* (
     earliestTime = Math.min(earliestTime, result.earliestTime)
     latestTime = Math.max(latestTime, result.latestTime)
     sessionTotalTokens.push(result.sessionTotalTokens)
+    stats.contextSamples.push(...result.contextSamples)
 
     stats.totalMessages += result.messageCount
     stats.totalCost += result.sessionCost

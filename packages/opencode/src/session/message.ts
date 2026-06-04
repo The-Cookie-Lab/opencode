@@ -79,6 +79,7 @@ export type FilePart = Schema.Schema.Type<typeof FilePart>
 
 export const StepStartPart = Schema.Struct({
   type: Schema.Literal("step-start"),
+  metadata: Schema.optional(Schema.Record(Schema.String, Schema.Unknown)),
 }).annotate({ identifier: "StepStartPart" })
 export type StepStartPart = Schema.Schema.Type<typeof StepStartPart>
 

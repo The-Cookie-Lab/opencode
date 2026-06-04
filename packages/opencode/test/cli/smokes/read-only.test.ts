@@ -98,6 +98,16 @@ describe("opencode read-only commands (smoke)", () => {
     60_000,
   )
 
+  cliIt.live(
+    "stats --context: exits 0",
+    ({ opencode }) =>
+      Effect.gen(function* () {
+        const r = yield* opencode.spawn(["stats", "--context"])
+        opencode.expectExit(r, 0, "stats --context")
+      }),
+    60_000,
+  )
+
   // `db path` prints the DB file location. Under harness isolation the DB
   // resolves to SQLite's `:memory:` (no on-disk pollution between tests);
   // in production it'd be a path under OPENCODE_TEST_HOME / XDG_DATA_HOME.
