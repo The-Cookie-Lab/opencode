@@ -16,6 +16,7 @@ export function adapterState() {
     currentTextID: undefined as string | undefined,
     currentReasoningID: undefined as string | undefined,
     toolNames: {} as Record<string, string>,
+    copilotTotalNanoAiu: undefined as number | undefined,
   }
 }
 
@@ -36,23 +37,35 @@ function providerMetadata(value: unknown): ProviderMetadata | undefined {
  */
 function enrichProviderMetadata(
   usage: unknown,
-  providerMetadata: unknown,
+  metadataInput: unknown,
 ): ProviderMetadata | undefined {
-  const meta = (typeof providerMetadata === "object" && providerMetadata !== null
-    ? providerMetadata
-    : {}) as Record<string, unknown>
+  const original = providerMetadata(metadataInput)
+  const meta = original ? { ...original } : {}
   const raw = (usage as { raw?: { _prompt_segments?: unknown } } | undefined)?.raw
   const segments = raw?._prompt_segments
-  if (!segments || typeof segments !== "object" || Object.keys(segments as object).length === 0) {
-    return Schema.is(ProviderMetadata)(meta) ? meta : undefined
-  }
+  if (!segments || typeof segments !== "object" || Object.keys(segments as object).length === 0) return original
   const keys = Object.keys(meta).filter((k) => k !== "__proto__")
   const targetKey = keys.length > 0 ? keys[0] : "openai"
+  const target = meta[targetKey]
   meta[targetKey] = {
-    ...(meta[targetKey] as Record<string, unknown>),
+    ...(typeof target === "object" && target !== null ? (target as Record<string, unknown>) : {}),
     prompt_tokens_details: segments,
   }
-  return Schema.is(ProviderMetadata)(meta) ? meta : undefined
+  return Schema.is(ProviderMetadata)(meta) ? meta : original
+}
+
+// Temporary AI SDK bridge: Copilot billing survives only in raw provider chunks here.
+// Move this extraction into @opencode-ai/llm when Copilot is handled by the native runtime.
+function copilotTotalNanoAiu(value: unknown) {
+  if (!value || typeof value !== "object") return
+  const raw = value as Record<string, unknown>
+  const response =
+    raw.response && typeof raw.response === "object" ? (raw.response as Record<string, unknown>) : undefined
+  const usage = raw.copilot_usage ?? response?.copilot_usage
+  if (!usage || typeof usage !== "object") return
+  const total = (usage as Record<string, unknown>).total_nano_aiu
+  if (typeof total !== "number" || !Number.isFinite(total) || total < 0) return
+  return total
 }
 
 function usage(value: unknown) {
@@ -98,16 +111,29 @@ export function toLLMEvents(
     case "start-step":
       return Effect.succeed([LLMEvent.stepStart({ index: state.step })])
 
-    case "finish-step": {
-      return Effect.sync(() => [
-        LLMEvent.stepFinish({
-          index: state.step++,
-          reason: finishReason(event.finishReason),
-          usage: usage(event.usage),
-          providerMetadata: enrichProviderMetadata(event.usage, event.providerMetadata),
-        }),
-      ])
-    }
+    case "finish-step":
+      return Effect.sync(() => {
+        const original = enrichProviderMetadata(event.usage, event.providerMetadata)
+        const metadata =
+          state.copilotTotalNanoAiu === undefined
+            ? original
+            : {
+                ...original,
+                copilot: {
+                  ...original?.copilot,
+                  totalNanoAiu: state.copilotTotalNanoAiu,
+                },
+              }
+        state.copilotTotalNanoAiu = undefined
+        return [
+          LLMEvent.stepFinish({
+            index: state.step++,
+            reason: finishReason(event.finishReason),
+            usage: usage(event.usage),
+            providerMetadata: metadata,
+          }),
+        ]
+      })
 
     case "finish":
       return Effect.sync(() => {
@@ -268,10 +294,15 @@ export function toLLMEvents(
     case "abort":
     case "source":
     case "file":
-    case "raw":
     case "tool-output-denied":
     case "tool-approval-request":
       return Effect.succeed([])
+
+    case "raw":
+      return Effect.sync(() => {
+        state.copilotTotalNanoAiu = copilotTotalNanoAiu(event.rawValue) ?? state.copilotTotalNanoAiu
+        return []
+      })
 
     default: {
       const _exhaustive: never = event

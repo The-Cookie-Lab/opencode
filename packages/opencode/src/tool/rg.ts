@@ -1,8 +1,8 @@
 import path from "path"
 import { Effect, Option, Schema } from "effect"
 import * as Stream from "effect/Stream"
-import { AppFileSystem } from "@opencode-ai/core/filesystem"
-import { Ripgrep } from "@/file/ripgrep"
+import { FSUtil } from "@opencode-ai/core/fs-util"
+import { Ripgrep } from "@opencode-ai/core/filesystem/ripgrep"
 import { InstanceState } from "@/effect/instance-state"
 import { Reference } from "@/reference/reference"
 import { assertExternalDirectoryEffect } from "./external-directory"
@@ -32,11 +32,11 @@ type Metadata = {
 export const RgTool = Tool.define<
   typeof Parameters,
   Metadata,
-  AppFileSystem.Service | Ripgrep.Service | Reference.Service
+  FSUtil.Service | Ripgrep.Service | Reference.Service
 >(
   "rg",
   Effect.gen(function* () {
-    const fs = yield* AppFileSystem.Service
+    const fs = yield* FSUtil.Service
     const rg = yield* Ripgrep.Service
     const reference = yield* Reference.Service
 
@@ -85,13 +85,13 @@ const files = Effect.fn("RgTool.files")(function* (
   worktree: string,
   requestedType: string | undefined,
   rg: Ripgrep.Interface,
-  fs: AppFileSystem.Interface,
+  fs: FSUtil.Interface,
   ctx: Tool.Context<Metadata>,
 ) {
   if (requestedType === "File") throw new Error(`rg files path must be a directory: ${requested}`)
   const limit = params.max ?? 100
   const rows = yield* rg
-    .files({ cwd: AppFileSystem.resolve(requested), glob: [params.pattern], hidden: params.hidden, signal: ctx.abort })
+    .files({ cwd: FSUtil.resolve(requested), glob: [params.pattern], hidden: params.hidden, signal: ctx.abort })
     .pipe(
       Stream.mapEffect((file) =>
         Effect.gen(function* () {
@@ -134,7 +134,7 @@ const content = Effect.fn("RgTool.content")(function* (
   rg: Ripgrep.Interface,
   ctx: Tool.Context<Metadata>,
 ) {
-  const search = AppFileSystem.resolve(requested)
+  const search = FSUtil.resolve(requested)
   const cwd = requestedType === "Directory" ? search : path.dirname(search)
   const file = requestedType === "Directory" ? undefined : [path.relative(cwd, search)]
   const result = yield* rg.search({
@@ -148,7 +148,7 @@ const content = Effect.fn("RgTool.content")(function* (
     signal: ctx.abort,
   })
   const rows = result.items.map((item) => ({
-    path: AppFileSystem.resolve(path.isAbsolute(item.path.text) ? item.path.text : path.join(cwd, item.path.text)),
+    path: FSUtil.resolve(path.isAbsolute(item.path.text) ? item.path.text : path.join(cwd, item.path.text)),
     line: item.line_number,
     text: item.lines.text,
   }))

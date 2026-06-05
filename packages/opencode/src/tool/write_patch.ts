@@ -1,10 +1,10 @@
 import * as path from "path"
 import { Effect, Schema, Semaphore } from "effect"
 import { createTwoFilesPatch, diffLines } from "diff"
-import { AppFileSystem } from "@opencode-ai/core/filesystem"
+import { FSUtil } from "@opencode-ai/core/fs-util"
 import { EventV2Bridge } from "@/event-v2-bridge"
-import { File } from "@/file"
-import { FileWatcher } from "@/file/watcher"
+import { FileSystem } from "@opencode-ai/core/filesystem"
+import { Watcher } from "@opencode-ai/core/filesystem/watcher"
 import { Format } from "@/format"
 import { InstanceState } from "@/effect/instance-state"
 import { LSP } from "@/lsp/lsp"
@@ -36,12 +36,12 @@ type Metadata = {
 export const WritePatchTool = Tool.define<
   typeof Parameters,
   Metadata,
-  LSP.Service | AppFileSystem.Service | Format.Service | EventV2Bridge.Service
+  LSP.Service | FSUtil.Service | Format.Service | EventV2Bridge.Service
 >(
   "write_patch",
   Effect.gen(function* () {
     const lsp = yield* LSP.Service
-    const afs = yield* AppFileSystem.Service
+    const afs = yield* FSUtil.Service
     const format = yield* Format.Service
     const events = yield* EventV2Bridge.Service
 
@@ -94,8 +94,8 @@ export const WritePatchTool = Tool.define<
 
               yield* afs.writeWithDirs(filepath, Bom.join(contentNew, desiredBom))
               if (yield* format.file(filepath)) contentNew = yield* Bom.syncFile(afs, filepath, desiredBom)
-              yield* events.publish(File.Event.Edited, { file: filepath })
-              yield* events.publish(FileWatcher.Event.Updated, {
+              yield* events.publish(FileSystem.Event.Edited, { file: filepath })
+              yield* events.publish(Watcher.Event.Updated, {
                 file: filepath,
                 event: exists ? "change" : "add",
               })
@@ -121,7 +121,7 @@ export const WritePatchTool = Tool.define<
 
           yield* lsp.touchFile(filepath, "document")
           const diagnostics = yield* lsp.diagnostics()
-          const block = LSP.Diagnostic.report(filepath, diagnostics[AppFileSystem.normalizePath(filepath)] ?? [])
+          const block = LSP.Diagnostic.report(filepath, diagnostics[FSUtil.normalizePath(filepath)] ?? [])
           return {
             title: path.relative(instance.worktree, filepath),
             metadata: {
@@ -137,7 +137,7 @@ export const WritePatchTool = Tool.define<
 )
 
 function lock(filePath: string) {
-  const resolved = AppFileSystem.resolve(filePath)
+  const resolved = FSUtil.resolve(filePath)
   const hit = locks.get(resolved)
   if (hit) return hit
   const next = Semaphore.makeUnsafe(1)

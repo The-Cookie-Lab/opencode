@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { SessionLegacy } from "@opencode-ai/core/session/legacy"
+import { SessionV1 } from "@opencode-ai/core/v1/session"
 import { MessageID, PartID, SessionID } from "@/session/schema"
 import {
   aggregateContextIntelligence,
@@ -105,7 +105,7 @@ describe("context intelligence burn-in aggregation", () => {
   })
 })
 
-function user(id: string, text: string): SessionLegacy.WithParts {
+function user(id: string, text: string): SessionV1.WithParts {
   const messageID = MessageID.make(`msg_${id}`)
   return {
     info: {
@@ -115,7 +115,7 @@ function user(id: string, text: string): SessionLegacy.WithParts {
       time: { created: Number(id) },
       agent: "build",
       model: { providerID: "test", modelID: "test" },
-    } as SessionLegacy.User,
+    } as SessionV1.User,
     parts: [
       {
         id: PartID.make(`prt_${id}-text`),
@@ -128,7 +128,7 @@ function user(id: string, text: string): SessionLegacy.WithParts {
   }
 }
 
-function assistant(id: string, parts: SessionLegacy.Part[]): SessionLegacy.WithParts {
+function assistant(id: string, parts: SessionV1.Part[]): SessionV1.WithParts {
   return {
     info: {
       id: MessageID.make(`msg_${id}`),
@@ -143,15 +143,15 @@ function assistant(id: string, parts: SessionLegacy.Part[]): SessionLegacy.WithP
       path: { cwd: "/tmp", root: "/tmp" },
       cost: 0,
       tokens: { input: 10, output: 2, reasoning: 0, cache: { read: 0, write: 0 } },
-    } as SessionLegacy.Assistant,
+    } as SessionV1.Assistant,
     parts,
   }
 }
 
 function stepStart(
   id: string,
-  metadata: NonNullable<SessionLegacy.StepStartPart["metadata"]>,
-): SessionLegacy.StepStartPart {
+  metadata: NonNullable<SessionV1.StepStartPart["metadata"]>,
+): SessionV1.StepStartPart {
   return {
     id: PartID.make(`prt_${id}`),
     sessionID,
@@ -163,8 +163,8 @@ function stepStart(
 
 function finish(
   id: string,
-  promptTokensDetails: NonNullable<SessionLegacy.StepFinishPart["promptTokensDetails"]>,
-): SessionLegacy.StepFinishPart {
+  promptTokensDetails: NonNullable<SessionV1.StepFinishPart["promptTokensDetails"]>,
+): SessionV1.StepFinishPart {
   return {
     id: PartID.make(`prt_${id}`),
     sessionID,
@@ -185,7 +185,7 @@ function tool(
     output?: string
     metadata?: Record<string, unknown>
   } = {},
-): SessionLegacy.ToolPart {
+): SessionV1.ToolPart {
   return {
     id: PartID.make(`prt_${id}`),
     sessionID,

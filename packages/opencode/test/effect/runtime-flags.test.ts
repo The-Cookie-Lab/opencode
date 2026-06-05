@@ -53,6 +53,7 @@ describe("RuntimeFlags", () => {
       expect(flags.experimentalMacroTools).toBe(true)
       expect(flags.experimentalContextTools).toBe(true)
       expect(flags.experimentalSemanticSearch).toBe(true)
+      expect(flags.experimentalReferences).toBe(true)
       expect(flags.experimentalBackgroundSubagents).toBe(true)
       expect(flags.experimentalLspTy).toBe(false)
       expect(flags.experimentalLspTool).toBe(true)

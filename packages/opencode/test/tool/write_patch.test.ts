@@ -5,7 +5,7 @@ import { Cause, Effect, Exit, Layer } from "effect"
 import { WritePatchTool } from "../../src/tool/write_patch"
 import { disposeAllInstances, TestInstance } from "../fixture/fixture"
 import { LSP } from "@/lsp/lsp"
-import { AppFileSystem } from "@opencode-ai/core/filesystem"
+import { FSUtil } from "@opencode-ai/core/fs-util"
 import { Format } from "../../src/format"
 import { Agent } from "../../src/agent/agent"
 import { EventV2Bridge } from "../../src/event-v2-bridge"
@@ -31,7 +31,7 @@ afterEach(async () => {
 
 const layer = Layer.mergeAll(
   LSP.defaultLayer,
-  AppFileSystem.defaultLayer,
+  FSUtil.defaultLayer,
   Format.defaultLayer,
   EventV2Bridge.defaultLayer,
   Truncate.defaultLayer,
@@ -63,12 +63,12 @@ const fail = Effect.fn("WritePatchToolTest.fail")(function* (args: Tool.InferPar
 })
 
 const put = Effect.fn("WritePatchToolTest.put")(function* (p: string, content: string) {
-  const appfs = yield* AppFileSystem.Service
+  const appfs = yield* FSUtil.Service
   yield* appfs.writeWithDirs(p, content)
 })
 
 const load = Effect.fn("WritePatchToolTest.load")(function* (p: string) {
-  const appfs = yield* AppFileSystem.Service
+  const appfs = yield* FSUtil.Service
   return yield* appfs.readFileString(p)
 })
 

@@ -3,7 +3,7 @@ import { Config } from "@/config/config"
 import { RuntimeFlags } from "@/effect/runtime-flags"
 import type { Provider } from "@/provider/provider"
 import { Token } from "@/util/token"
-import { SessionLegacy } from "@opencode-ai/core/session/legacy"
+import { SessionV1 } from "@opencode-ai/core/v1/session"
 import { Context, Effect, Layer } from "effect"
 import { MessageV2 } from "./message-v2"
 import { usable } from "./overflow"
@@ -59,7 +59,7 @@ type HysteresisState = {
 export interface Interface {
   readonly evaluate: (input: {
     sessionID: SessionID
-    messages: SessionLegacy.WithParts[]
+    messages: SessionV1.WithParts[]
     model: Provider.Model
     agent: Agent.Info
     now: number
@@ -123,7 +123,7 @@ type LedgerCandidate = ContextLedgerItem & {
   userTurnsAfter: number
 }
 
-function buildLedger(messages: SessionLegacy.WithParts[], sessionID: SessionID): ContextLedgerItem[] {
+function buildLedger(messages: SessionV1.WithParts[], sessionID: SessionID): ContextLedgerItem[] {
   const ordered = messages.toSorted((a, b) => a.info.id.localeCompare(b.info.id))
   const latestUserID = latestMessageID(ordered, "user")
   const latestAssistantID = latestMessageID(ordered, "assistant")
@@ -199,8 +199,8 @@ function buildLedger(messages: SessionLegacy.WithParts[], sessionID: SessionID):
 }
 
 function toolCandidate(
-  part: SessionLegacy.ToolPart,
-  message: SessionLegacy.WithParts,
+  part: SessionV1.ToolPart,
+  message: SessionV1.WithParts,
   sessionID: SessionID,
   userTurnsAfter: number,
   order: number,
@@ -243,7 +243,7 @@ function toolCandidate(
   }
 }
 
-function newestObservationByPath(messages: SessionLegacy.WithParts[]) {
+function newestObservationByPath(messages: SessionV1.WithParts[]) {
   const result = new Map<string, string>()
   for (const message of messages) {
     for (const part of message.parts) {
@@ -256,13 +256,13 @@ function newestObservationByPath(messages: SessionLegacy.WithParts[]) {
   return result
 }
 
-function latestMessageID(messages: SessionLegacy.WithParts[], role: "user" | "assistant") {
+function latestMessageID(messages: SessionV1.WithParts[], role: "user" | "assistant") {
   return messages
     .filter((message) => message.info.role === role)
     .toSorted((a, b) => b.info.id.localeCompare(a.info.id))[0]?.info.id
 }
 
-function toolPath(part: SessionLegacy.ToolPart) {
+function toolPath(part: SessionV1.ToolPart) {
   const input = part.state.input
   const fromInput = stringField(input, "filePath") ?? stringField(input, "path")
   const metadata =

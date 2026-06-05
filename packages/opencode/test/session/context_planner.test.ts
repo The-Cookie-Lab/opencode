@@ -1,7 +1,8 @@
 import { describe, expect } from "bun:test"
 import { Effect, Layer } from "effect"
-import { SessionLegacy } from "@opencode-ai/core/session/legacy"
+import { SessionV1 } from "@opencode-ai/core/v1/session"
 import { ProviderV2 } from "@opencode-ai/core/provider"
+import { ModelV2 } from "@opencode-ai/core/model"
 import { MessageID, PartID, SessionID } from "@/session/schema"
 import { ContextPlanner, LARGE_TOOL_OUTPUT_TOKENS, LEDGER_LIMIT } from "@/session/context-planner"
 import { RuntimeFlags } from "@/effect/runtime-flags"
@@ -103,7 +104,7 @@ describe("context planner", () => {
   )
 })
 
-function user(id: string, text: string): SessionLegacy.WithParts {
+function user(id: string, text: string): SessionV1.WithParts {
   const messageID = MessageID.make(`msg_${id}`)
   return {
     info: {
@@ -113,7 +114,7 @@ function user(id: string, text: string): SessionLegacy.WithParts {
       time: { created: Number(id) },
       agent: "build",
       model: { providerID: "test", modelID: "test" },
-    } as SessionLegacy.User,
+    } as SessionV1.User,
     parts: [
       {
         id: PartID.make(`prt_${id}-text`),
@@ -126,7 +127,7 @@ function user(id: string, text: string): SessionLegacy.WithParts {
   }
 }
 
-function assistant(id: string, parts: SessionLegacy.Part[]): SessionLegacy.WithParts {
+function assistant(id: string, parts: SessionV1.Part[]): SessionV1.WithParts {
   return {
     info: {
       id: MessageID.make(`msg_${id}`),
@@ -141,7 +142,7 @@ function assistant(id: string, parts: SessionLegacy.Part[]): SessionLegacy.WithP
       path: { cwd: "/tmp", root: "/tmp" },
       cost: 0,
       tokens: { input: 10, output: 2, reasoning: 0, cache: { read: 0, write: 0 } },
-    } as SessionLegacy.Assistant,
+    } as SessionV1.Assistant,
     parts,
   }
 }
@@ -150,7 +151,7 @@ function tool(
   id: string,
   name: string,
   input: { input?: Record<string, unknown>; output?: string; compacted?: boolean } = {},
-): SessionLegacy.ToolPart {
+): SessionV1.ToolPart {
   return {
     id: PartID.make(`prt_${id}`),
     sessionID,
@@ -171,7 +172,7 @@ function tool(
 
 function model(context: number): Provider.Model {
   return {
-    id: ProviderV2.ModelID.make("test-model"),
+    id: ModelV2.ID.make("test-model"),
     providerID: ProviderV2.ID.make("test"),
     api: { id: "test", url: "http://localhost", npm: "@ai-sdk/openai-compatible" },
     name: "test",

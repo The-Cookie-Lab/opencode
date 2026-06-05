@@ -1,12 +1,12 @@
 import path from "path"
 import { pathToFileURL } from "url"
 import { existsSync } from "fs"
-import { AppFileSystem } from "@opencode-ai/core/filesystem"
+import { FSUtil } from "@opencode-ai/core/fs-util"
 import { CrossSpawnSpawner } from "@opencode-ai/core/cross-spawn-spawner"
 import { Git } from "@/git"
 import { InstanceState } from "@/effect/instance-state"
 import { LSP } from "@/lsp/lsp"
-import { Ripgrep } from "@/file/ripgrep"
+import { Ripgrep } from "@opencode-ai/core/filesystem/ripgrep"
 import { Context, Effect, Layer, Scope } from "effect"
 import * as Stream from "effect/Stream"
 import { ChildProcess } from "effect/unstable/process"
@@ -236,11 +236,11 @@ export class Service extends Context.Service<Service, Interface>()("@opencode/Co
 export const layer: Layer.Layer<
   Service,
   never,
-  AppFileSystem.Service | Git.Service | LSP.Service | Ripgrep.Service | ChildProcessSpawner
+  FSUtil.Service | Git.Service | LSP.Service | Ripgrep.Service | ChildProcessSpawner
 > = Layer.effect(
   Service,
   Effect.gen(function* () {
-    const fs = yield* AppFileSystem.Service
+    const fs = yield* FSUtil.Service
     const git = yield* Git.Service
     const lsp = yield* LSP.Service
     const rg = yield* Ripgrep.Service
@@ -446,7 +446,7 @@ export const layer: Layer.Layer<
           })
           .pipe(Effect.catch(() => Effect.succeed({ items: [], partial: true })))
         for (const item of result.items.slice(0, max * 12)) {
-          const full = AppFileSystem.resolve(path.isAbsolute(item.path.text) ? item.path.text : path.join(root, item.path.text))
+          const full = FSUtil.resolve(path.isAbsolute(item.path.text) ? item.path.text : path.join(root, item.path.text))
           const key = `${full}:${item.line_number}`
           const existing = rows.get(key)
           const snippet = trimSnippet(item.lines.text)
@@ -479,7 +479,7 @@ export const layer: Layer.Layer<
         .pipe(Stream.take(MAX_INDEX_FILES), Stream.runCollect, Effect.map((chunk) => [...chunk]))
       const chunks: IndexedChunk[] = []
       for (const file of files) {
-        const full = AppFileSystem.resolve(path.join(root, file))
+        const full = FSUtil.resolve(path.join(root, file))
         const content = yield* fs.readFileStringSafe(full).pipe(Effect.orElseSucceed(() => undefined))
         if (!content || Buffer.byteLength(content, "utf8") > MAX_FILE_BYTES) continue
         const symbols = outlineFromText(full, content, false)
@@ -530,7 +530,7 @@ export const layer: Layer.Layer<
 )
 
 export const defaultLayer = layer.pipe(
-  Layer.provide(AppFileSystem.defaultLayer),
+  Layer.provide(FSUtil.defaultLayer),
   Layer.provide(Git.defaultLayer),
   Layer.provide(LSP.defaultLayer),
   Layer.provide(FetchHttpClient.layer),

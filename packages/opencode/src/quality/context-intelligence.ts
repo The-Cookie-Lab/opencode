@@ -1,4 +1,4 @@
-import { SessionLegacy } from "@opencode-ai/core/session/legacy"
+import { SessionV1 } from "@opencode-ai/core/v1/session"
 import type { ContextPlan } from "../session/context-planner"
 
 const MACRO_TOOLS = new Set(["project_dossier", "view_outline", "semantic_search"])
@@ -13,7 +13,7 @@ const TEST_COMMAND_PATTERNS = [
   /\bpytest\b/,
 ]
 
-type PromptTokensDetails = NonNullable<SessionLegacy.StepFinishPart["promptTokensDetails"]>
+type PromptTokensDetails = NonNullable<SessionV1.StepFinishPart["promptTokensDetails"]>
 
 export type TurnSample = {
   sessionID: string
@@ -70,20 +70,20 @@ export type ContextIntelligenceReport = {
 }
 
 export function collectTurnSample(input: {
-  message: SessionLegacy.WithParts
-  previous?: SessionLegacy.WithParts
+  message: SessionV1.WithParts
+  previous?: SessionV1.WithParts
 }): TurnSample | undefined {
   if (input.message.info.role !== "assistant") return undefined
-  const toolParts = input.message.parts.filter((part): part is SessionLegacy.ToolPart => part.type === "tool")
+  const toolParts = input.message.parts.filter((part): part is SessionV1.ToolPart => part.type === "tool")
   const discoveryTools = toolParts.filter(
     (part) => MACRO_TOOLS.has(part.tool) || PRIMITIVE_DISCOVERY_TOOLS.has(part.tool),
   )
   const prompt = input.message.parts.find(
-    (part): part is SessionLegacy.StepFinishPart =>
+    (part): part is SessionV1.StepFinishPart =>
       part.type === "step-finish" && part.promptTokensDetails !== undefined,
   )?.promptTokensDetails
   const contextPlan = input.message.parts
-    .filter((part): part is SessionLegacy.StepStartPart => part.type === "step-start")
+    .filter((part): part is SessionV1.StepStartPart => part.type === "step-start")
     .map((part) => contextPlanFromMetadata(part.metadata))
     .find((plan): plan is ContextPlan => plan !== undefined)
   const telemetry = toolParts.map((part) => telemetryFromTool(part)).find((item) => item !== undefined)
@@ -209,7 +209,7 @@ function contextPlanFromMetadata(metadata: Record<string, unknown> | undefined) 
   return candidate as ContextPlan
 }
 
-function telemetryFromTool(part: SessionLegacy.ToolPart) {
+function telemetryFromTool(part: SessionV1.ToolPart) {
   const metadata = part.state.status === "completed" ? part.state.metadata.telemetry : undefined
   if (!metadata || typeof metadata !== "object") return undefined
   const value = metadata as Record<string, unknown>
@@ -224,9 +224,9 @@ function numberField(input: Record<string, unknown>, key: string) {
   return typeof value === "number" && Number.isFinite(value) ? value : undefined
 }
 
-function firstToolStart(message: SessionLegacy.WithParts, predicate: (part: SessionLegacy.ToolPart) => boolean) {
+function firstToolStart(message: SessionV1.WithParts, predicate: (part: SessionV1.ToolPart) => boolean) {
   return message.parts
-    .filter((part): part is SessionLegacy.ToolPart => part.type === "tool" && predicate(part))
+    .filter((part): part is SessionV1.ToolPart => part.type === "tool" && predicate(part))
     .flatMap((part) =>
       part.state.status === "completed" || part.state.status === "running" || part.state.status === "error"
         ? [part.state.time.start]
@@ -235,13 +235,13 @@ function firstToolStart(message: SessionLegacy.WithParts, predicate: (part: Sess
     .toSorted((a, b) => a - b)[0]
 }
 
-function isTestTool(part: SessionLegacy.ToolPart) {
+function isTestTool(part: SessionV1.ToolPart) {
   if (part.tool !== "bash" && part.tool !== "shell") return false
   const command = stringField(part.state.input, "command") ?? stringField(part.state.input, "cmd") ?? ""
   return TEST_COMMAND_PATTERNS.some((pattern) => pattern.test(command))
 }
 
-function isSemanticColdFallback(part: SessionLegacy.ToolPart) {
+function isSemanticColdFallback(part: SessionV1.ToolPart) {
   if (part.tool !== "semantic_search" || part.state.status !== "completed") return false
   return (
     part.state.metadata.mode === "lexical" &&
@@ -250,12 +250,12 @@ function isSemanticColdFallback(part: SessionLegacy.ToolPart) {
   )
 }
 
-function isSemanticWarmIndex(part: SessionLegacy.ToolPart) {
+function isSemanticWarmIndex(part: SessionV1.ToolPart) {
   if (part.tool !== "semantic_search" || part.state.status !== "completed") return false
   return part.state.metadata.mode === "semantic" || part.state.metadata.indexed === true
 }
 
-function pathFromTool(part: SessionLegacy.ToolPart) {
+function pathFromTool(part: SessionV1.ToolPart) {
   if (part.state.status === "pending")
     return stringField(part.state.input, "filePath") ?? stringField(part.state.input, "path")
   return (
@@ -286,7 +286,7 @@ function promptTotal(prompt: PromptTokensDetails) {
   )
 }
 
-function tokenTotal(tokensInput: SessionLegacy.Assistant["tokens"] | undefined) {
+function tokenTotal(tokensInput: SessionV1.Assistant["tokens"] | undefined) {
   if (!tokensInput) return 0
   return (
     tokensInput.total ??

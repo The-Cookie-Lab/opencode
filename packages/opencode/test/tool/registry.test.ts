@@ -10,7 +10,7 @@ import { Tool } from "@/tool/tool"
 import { disposeAllInstances, TestInstance } from "../fixture/fixture"
 import { testEffect } from "../lib/effect"
 import { TestConfig } from "../fixture/config"
-import { AppFileSystem } from "@opencode-ai/core/filesystem"
+import { FSUtil } from "@opencode-ai/core/fs-util"
 import { Plugin } from "@/plugin"
 import { Question } from "@/question"
 import { Todo } from "@/session/todo"
@@ -26,7 +26,7 @@ import { Instruction } from "@/session/instruction"
 import { EventV2Bridge } from "@/event-v2-bridge"
 import { FetchHttpClient } from "effect/unstable/http"
 import { Format } from "@/format"
-import { Ripgrep } from "@/file/ripgrep"
+import { Ripgrep } from "@opencode-ai/core/filesystem/ripgrep"
 import * as Truncate from "@/tool/truncate"
 import { InstanceState } from "@/effect/instance-state"
 import { Reference } from "@/reference/reference"
@@ -37,6 +37,7 @@ import { MessageID, SessionID } from "@/session/schema"
 import { RuntimeFlags } from "@/effect/runtime-flags"
 import { ProviderV2 } from "@opencode-ai/core/provider"
 import { ContextIntel } from "@/context-intel"
+import { ModelV2 } from "@opencode-ai/core/model"
 
 const node = CrossSpawnSpawner.defaultLayer
 const configLayer = TestConfig.layer({
@@ -65,7 +66,7 @@ const registryLayer = (opts: RegistryLayerOptions = {}) =>
       Layer.provide(Reference.defaultLayer),
       Layer.provide(LSP.defaultLayer),
       Layer.provide(Instruction.defaultLayer),
-      Layer.provide(AppFileSystem.defaultLayer),
+      Layer.provide(FSUtil.defaultLayer),
       Layer.provide(EventV2Bridge.defaultLayer),
       Layer.provide(FetchHttpClient.layer),
       Layer.provide(Format.defaultLayer),
@@ -196,7 +197,7 @@ describe("tool.registry", () => {
       if (!build) throw new Error("build agent not found")
       const task = (yield* registry.tools({
         providerID: ProviderV2.ID.opencode,
-        modelID: ProviderV2.ModelID.make("test"),
+        modelID: ModelV2.ID.make("test"),
         agent: build,
       })).find((tool) => tool.id === "task")
 
@@ -374,7 +375,7 @@ describe("tool.registry", () => {
       const agents = yield* Agent.Service
       const promptTools = yield* registry.tools({
         providerID: ProviderV2.ID.opencode,
-        modelID: ProviderV2.ModelID.make("test"),
+        modelID: ModelV2.ID.make("test"),
         agent: yield* agents.defaultInfo(),
       })
       const promptTool = promptTools.find((tool) => tool.id === "sql")

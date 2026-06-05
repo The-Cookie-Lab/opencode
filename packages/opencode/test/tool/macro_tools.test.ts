@@ -2,16 +2,16 @@ import { afterEach, describe, expect } from "bun:test"
 import path from "path"
 import { Effect, Layer } from "effect"
 import { CrossSpawnSpawner } from "@opencode-ai/core/cross-spawn-spawner"
-import { AppFileSystem } from "@opencode-ai/core/filesystem"
+import { FSUtil } from "@opencode-ai/core/fs-util"
 import { Agent } from "@/agent/agent"
 import { ContextIntel } from "@/context-intel"
 import { FetchHttpClient } from "effect/unstable/http"
 import { Git } from "@/git"
 import { LSP } from "@/lsp/lsp"
 import { MessageID, SessionID } from "@/session/schema"
-import { Permission } from "@/permission"
+import { PermissionV1 } from "@opencode-ai/core/v1/permission"
 import { ProjectDossierTool } from "@/tool/project_dossier"
-import { Ripgrep } from "@/file/ripgrep"
+import { Ripgrep } from "@opencode-ai/core/filesystem/ripgrep"
 import { SemanticSearchTool } from "@/tool/semantic_search"
 import { Tool } from "@/tool/tool"
 import { Truncate } from "@/tool/truncate"
@@ -43,7 +43,7 @@ const lsp = Layer.succeed(
 )
 
 const contextIntelLayer = ContextIntel.layer.pipe(
-  Layer.provide(AppFileSystem.defaultLayer),
+  Layer.provide(FSUtil.defaultLayer),
   Layer.provide(CrossSpawnSpawner.defaultLayer),
   Layer.provide(FetchHttpClient.layer),
   Layer.provide(Git.defaultLayer),
@@ -53,7 +53,7 @@ const contextIntelLayer = ContextIntel.layer.pipe(
 
 const layer = Layer.mergeAll(
   Agent.defaultLayer,
-  AppFileSystem.defaultLayer,
+  FSUtil.defaultLayer,
   CrossSpawnSpawner.defaultLayer,
   FetchHttpClient.layer,
   Git.defaultLayer,
@@ -77,12 +77,12 @@ const ctx = {
 } satisfies Tool.Context
 
 const asks = () => {
-  const items: Array<Omit<Permission.Request, "id" | "sessionID" | "tool">> = []
+  const items: Array<Omit<PermissionV1.Request, "id" | "sessionID" | "tool">> = []
   return {
     items,
     next: {
       ...ctx,
-      ask: (req: Omit<Permission.Request, "id" | "sessionID" | "tool">) =>
+      ask: (req: Omit<PermissionV1.Request, "id" | "sessionID" | "tool">) =>
         Effect.sync(() => {
           items.push(req)
         }),
@@ -146,7 +146,7 @@ describe("macro tools", () => {
         provideTmpdirInstance(
           (dir) =>
             Effect.gen(function* () {
-              const fs = yield* AppFileSystem.Service
+              const fs = yield* FSUtil.Service
               for (const [name, content] of Object.entries(fixture.files)) {
                 yield* fs.writeWithDirs(path.join(dir, name), content)
               }
@@ -190,7 +190,7 @@ describe("macro tools", () => {
                 ],
               },
             ]
-            const fs = yield* AppFileSystem.Service
+            const fs = yield* FSUtil.Service
             const file = path.join(dir, "runner.ts")
             yield* fs.writeWithDirs(file, "export class Runner {\n  start(input: string) {}\n}\n")
 
@@ -209,7 +209,7 @@ describe("macro tools", () => {
       provideTmpdirInstance(
         (dir) =>
           Effect.gen(function* () {
-            const fs = yield* AppFileSystem.Service
+            const fs = yield* FSUtil.Service
             const file = path.join(dir, "service.ts")
             yield* fs.writeWithDirs(
               file,
@@ -245,7 +245,7 @@ describe("macro tools", () => {
       provideTmpdirInstance(
         (dir) =>
           Effect.gen(function* () {
-            const fs = yield* AppFileSystem.Service
+            const fs = yield* FSUtil.Service
             yield* fs.writeWithDirs(path.join(dir, "src", "auth.ts"), "export function refreshToken() { return 'ok' }\n")
 
             const tool = yield* initSemanticSearch()
@@ -265,7 +265,7 @@ describe("macro tools", () => {
       provideTmpdirInstance(
         (dir) =>
           Effect.gen(function* () {
-            const fs = yield* AppFileSystem.Service
+            const fs = yield* FSUtil.Service
             yield* fs.writeWithDirs(path.join(dir, "src", "auth.ts"), "export function issueSessionToken() { return 'ok' }\n")
             const tool = yield* initSemanticSearch()
 
@@ -285,7 +285,7 @@ describe("macro tools", () => {
       provideTmpdirInstance(
         (dir) =>
           Effect.gen(function* () {
-            const fs = yield* AppFileSystem.Service
+            const fs = yield* FSUtil.Service
             yield* fs.writeWithDirs(path.join(dir, "node_modules", "pkg", "hidden.ts"), "export const hiddenOnly = true\n")
             for (let i = 0; i < 4; i++) {
               yield* fs.writeWithDirs(path.join(dir, "src", `file${i}.ts`), `export const visibleNeedle${i} = true\n`)
@@ -308,7 +308,7 @@ describe("macro tools", () => {
       provideTmpdirInstance(
         (dir) =>
           Effect.gen(function* () {
-            const fs = yield* AppFileSystem.Service
+            const fs = yield* FSUtil.Service
             yield* fs.writeWithDirs(path.join(dir, "src", "auth.ts"), "export const token = true\n")
             const { items, next } = asks()
 
