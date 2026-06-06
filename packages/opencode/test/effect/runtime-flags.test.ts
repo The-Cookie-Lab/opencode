@@ -14,6 +14,7 @@ describe("RuntimeFlags", () => {
       const flags = yield* readFlags.pipe(Effect.provide(fromConfig({})))
 
       expect(flags.autoShare).toBe(false)
+      expect(flags.burnInTelemetry).toBe("off")
     }),
   )
 
@@ -34,6 +35,7 @@ describe("RuntimeFlags", () => {
             OPENCODE_ENABLE_EXPERIMENTAL_MODELS: "true",
             OPENCODE_ENABLE_QUESTION_TOOL: "true",
             OPENCODE_CLIENT: "desktop",
+            OPENCODE_BURNIN_TELEMETRY: "verbose",
           }),
         ),
       )
@@ -64,7 +66,16 @@ describe("RuntimeFlags", () => {
       expect(flags.experimentalIconDiscovery).toBe(true)
       expect(flags.experimentalNativeLlm).toBe(false)
       expect(flags.experimentalWebSockets).toBe(false)
+      expect(flags.burnInTelemetry).toBe("verbose")
       expect(flags.client).toBe("desktop")
+    }),
+  )
+
+  it.effect("defaults unknown burn-in telemetry modes to off", () =>
+    Effect.gen(function* () {
+      const flags = yield* readFlags.pipe(Effect.provide(fromConfig({ OPENCODE_BURNIN_TELEMETRY: "loud" })))
+
+      expect(flags.burnInTelemetry).toBe("off")
     }),
   )
 

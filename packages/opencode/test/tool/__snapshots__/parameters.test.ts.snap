@@ -204,6 +204,72 @@ exports[`tool parameters JSON Schema (wire shape) lsp 1`] = `
 }
 `;
 
+exports[`tool parameters JSON Schema (wire shape) memread 1`] = `
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "properties": {
+    "level": {
+      "description": "auto|abstract|overview|read. auto lets model-server choose a directory overview or direct read.",
+      "enum": [
+        "auto",
+        "abstract",
+        "overview",
+        "read",
+      ],
+      "type": "string",
+    },
+    "uri": {
+      "description": "viking:// URI to read from persisted memory.",
+      "type": "string",
+    },
+  },
+  "required": [
+    "uri",
+  ],
+  "type": "object",
+}
+`;
+
+exports[`tool parameters JSON Schema (wire shape) memsearch 1`] = `
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "properties": {
+    "limit": {
+      "description": "Maximum memory results to return. Defaults to model-server policy.",
+      "exclusiveMinimum": 0,
+      "maximum": 9007199254740991,
+      "minimum": -9007199254740991,
+      "type": "integer",
+    },
+    "mode": {
+      "description": "auto|fast|deep. auto uses session context for deeper multi-turn memory search when available.",
+      "enum": [
+        "auto",
+        "fast",
+        "deep",
+      ],
+      "type": "string",
+    },
+    "query": {
+      "description": "Natural-language memory query.",
+      "type": "string",
+    },
+    "score_threshold": {
+      "description": "Optional minimum relevance score threshold.",
+      "type": "number",
+    },
+    "target_uri": {
+      "description": "Optional viking:// URI scope to restrict retrieval.",
+      "type": "string",
+    },
+  },
+  "required": [
+    "query",
+  ],
+  "type": "object",
+}
+`;
+
 exports[`tool parameters JSON Schema (wire shape) plan 1`] = `
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",

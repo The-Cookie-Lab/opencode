@@ -50,13 +50,65 @@ do not replace tool defaults. `ContextIntel.Service` is part of the registry
 graph whenever those tools are initialized, so macro telemetry and adoption can
 be measured through the same production service path.
 
+## Local model memory tools
+
+`memsearch` and `memread` are native opencode tools registered only when the
+active provider is `local-model-server`. They are not plugin tools; their Effect
+schemas, JSON Schema metadata, registry gating, and tests live in-repo.
+
+Both tools call the local model-server OpenViking facade rather than OpenViking
+directly:
+
+- `memsearch` posts to `/v1/openviking/search` with `query`, optional
+  `target_uri`, `mode: auto|fast|deep`, `limit`, and `score_threshold`.
+- `memread` posts to `/v1/openviking/read` with `uri` and
+  `level: auto|abstract|overview|read`.
+
+Session persistence is also provider-gated. When a user message uses the
+`local-model-server` provider, opencode mirrors visible text to model-server.
+Completed assistant messages mirror structured OpenViking parts: visible text
+parts plus bounded tool parts with `tool_id`, `tool_name`, redacted
+`tool_input`, bounded `tool_output`, `tool_status`, `duration_ms`, estimated
+`prompt_tokens`/`completion_tokens`, and `skill_uri` for `skill` tool calls.
+Synthetic prompt text and files are not mirrored; model-server owns the
+OpenViking session mapping, dedupe, commit scheduling, and fail-open behavior.
+
+## Phase 1.5 burn-in telemetry
+
+`OPENCODE_BURNIN_TELEMETRY=off|standard|verbose` controls shadow-only telemetry.
+The default is `off`. Standard and verbose modes write dedicated NDJSON under
+the existing opencode log directory and never block the session hot path:
+capture only enqueues into a bounded in-memory queue, and sink failures update
+drop/error counters.
+
+All events use one envelope with `schema_version`, `mode`, `run_id`,
+`session_id`, `message_id`, `step_index`, `call_id`, `entity`, `status`,
+`duration_ms`, `tokens`, `args`, `metadata`, and `error`. Emitted event names
+include `turn.started`, `tool.called`, `tool.settled`, `skill.loaded`,
+`memory.search`, `memory.read`, `turn.summary`, `session.summary`, and
+`sink.health`.
+
+Standard mode records IDs, names, status, duration, known safe scalar args,
+argument hashes/sizes, token rollups, memory result counts, and short error
+classes. Verbose mode adds redacted/truncated args, provider and result
+metadata, output hashes plus small previews, prompt token breakdowns, and queue
+or sink diagnostics. Keys matching token/secret/password/API-key/authorization
+patterns are redacted in both modes, and every event is size-capped.
+
+Token labels are explicit: `step-finish.tokens` and `promptTokensDetails` are
+exact; per-tool and per-skill input/output tokens are estimated from captured
+argument and output sizes until model-server exposes exact per-call token
+segments.
+
 ## Context intelligence burn-in
 
 `opencode stats --context` appends a `CONTEXT INTELLIGENCE BURN-IN` section to
 the normal stats report. The command reuses the existing session/message
 traversal and summarizes shadow planner metadata, macro adoption, primitive
 discovery, semantic-search cold/warm behavior, prompt pressure, projected
-savings, and data gaps.
+savings, tool/skill/memory rollups, schema-token footprint by tool, repeated
+same-tool+same-args loops, permission denials, truncation/externalization
+counts, and data gaps.
 
 The burn-in planner is shadow-only. It can persist a compact
 `step-start.metadata.contextPlan` record for observability, but it must not
@@ -86,6 +138,8 @@ These exported tool definitions currently use `Tool.define(...)` in `src/tool`:
 - [x] `grep.ts`
 - [x] `invalid.ts`
 - [x] `lsp.ts`
+- [x] `memread.ts`
+- [x] `memsearch.ts`
 - [x] `plan.ts`
 - [x] `question.ts`
 - [x] `read.ts`

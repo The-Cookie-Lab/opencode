@@ -8,6 +8,10 @@ const positiveInteger = (name: string) =>
     Config.orElse(() => Config.succeed(undefined)),
   )
 const experimental = bool("OPENCODE_EXPERIMENTAL")
+const burnInTelemetry = Config.string("OPENCODE_BURNIN_TELEMETRY").pipe(
+  Config.withDefault("off"),
+  Config.map((mode) => (mode === "standard" || mode === "verbose" ? mode : "off") as "off" | "standard" | "verbose"),
+)
 const enabledByExperimental = (name: string) =>
   Config.all({ experimental, enabled: Config.boolean(name).pipe(Config.option) }).pipe(
     Config.map((flags) => Option.getOrElse(flags.enabled, () => flags.experimental)),
@@ -61,6 +65,7 @@ export class Service extends ConfigService.Service<Service>()("@opencode/Runtime
     Config.withDefault("raw"),
     Config.map((mode) => (mode === "curated" ? "curated" : "raw") as "raw" | "curated"),
   ),
+  burnInTelemetry,
   client: Config.string("OPENCODE_CLIENT").pipe(Config.withDefault("cli")),
 }) {}
 

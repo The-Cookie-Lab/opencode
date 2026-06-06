@@ -65,6 +65,7 @@ import { RepositoryCache } from "../../src/reference/repository-cache"
 import { RuntimeFlags } from "@/effect/runtime-flags"
 import { ContextIntel } from "@/context-intel"
 import { ContextPlanner } from "@/session/context-planner"
+import { LocalModelServerMemory } from "@/memory/local-model-server"
 
 void Log.init({ print: false })
 
@@ -134,6 +135,7 @@ function makeHttp() {
     status,
     Database.defaultLayer,
     EventV2Bridge.defaultLayer,
+    LocalModelServerMemory.defaultLayer,
   ).pipe(Layer.provideMerge(infra))
   const question = Question.layer.pipe(Layer.provideMerge(deps))
   const todo = Todo.layer.pipe(Layer.provideMerge(deps))

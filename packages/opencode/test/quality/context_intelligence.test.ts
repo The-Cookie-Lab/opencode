@@ -41,6 +41,22 @@ describe("context intelligence burn-in aggregation", () => {
         },
       }),
       tool("002-read", "read", { input: { filePath: "src/old.ts" }, output: "old" }),
+      tool("002-skill", "skill", { input: { name: "openai-docs" }, output: "loaded" }),
+      tool("002-memsearch", "memsearch", {
+        input: { query: "prior decision" },
+        output: JSON.stringify({
+          status: "ok",
+          result: [{ uri: "viking://resources/codex-memories/MEMORY.md" }],
+        }),
+      }),
+      tool("002-memread", "memread", {
+        input: { uri: "viking://resources/codex-memories/MEMORY.md" },
+        output: JSON.stringify({
+          status: "ok",
+          uri: "viking://resources/codex-memories/MEMORY.md",
+          result: { text: "memory" },
+        }),
+      }),
       finish("002-finish", {
         messages: [{ role: "user", tokens: 100, cached: 20 }],
         tools: [{ name: "project_dossier", tokens: 30 }],
@@ -69,10 +85,20 @@ describe("context intelligence burn-in aggregation", () => {
     expect(report.readGrepReductionRate).toBe(0.5)
     expect(report.promptPressure.input).toBe(100)
     expect(report.promptPressure.cached).toBe(25)
+    expect(report.tools.calls).toBe(7)
+    expect(report.tools.successRate).toBe(1)
+    expect(report.tools.schemaTokenFootprint).toEqual([{ tool: "project_dossier", tokens: 30 }])
+    expect(report.skills.calls).toBe(1)
+    expect(report.skills.unique).toBe(1)
+    expect(report.memory.searchCount).toBe(1)
+    expect(report.memory.readCount).toBe(1)
+    expect(report.memory.returnedUriCount).toBe(1)
+    expect(report.memory.readAfterSearchUtilizationRate).toBe(1)
+    expect(report.memory.sourceKindMix).toEqual([{ kind: "resource", count: 2 }])
     expect(report.shadow.candidateCount).toBe(1)
     expect(report.shadow.projectedSavingsTokens).toBe(900)
     expect(report.shadow.rereadAfterDropCount).toBe(1)
-    expect(report.dataGaps).toEqual(["promptTokensDetails", "contextPlan"])
+    expect(report.dataGaps).toEqual(["promptTokensDetails", "contextPlan", "sinkHealth"])
   })
 
   test("detects semantic cold fallback and warm indexes", () => {
@@ -148,10 +174,7 @@ function assistant(id: string, parts: SessionV1.Part[]): SessionV1.WithParts {
   }
 }
 
-function stepStart(
-  id: string,
-  metadata: NonNullable<SessionV1.StepStartPart["metadata"]>,
-): SessionV1.StepStartPart {
+function stepStart(id: string, metadata: NonNullable<SessionV1.StepStartPart["metadata"]>): SessionV1.StepStartPart {
   return {
     id: PartID.make(`prt_${id}`),
     sessionID,

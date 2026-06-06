@@ -1,7 +1,7 @@
 import { PermissionV1 } from "@opencode-ai/core/v1/permission"
 import { Image } from "@/image/image"
 import { SessionV1 } from "@opencode-ai/core/v1/session"
-import { Cause, Deferred, Effect, Exit, Layer, Context, Scope, Schema } from "effect"
+import { Cause, Deferred, Effect, Exit, Layer, Context, Scope, Schema, Option } from "effect"
 import * as Stream from "effect/Stream"
 import { Agent } from "@/agent/agent"
 import { Config } from "@/config/config"
@@ -33,6 +33,8 @@ import { RuntimeFlags } from "@/effect/runtime-flags"
 import { toolFileSourceFromUri, Usage, type LLMEvent } from "@opencode-ai/llm"
 import { ToolOutput } from "@opencode-ai/core/tool-output"
 import type { ContextPlanner } from "./context-planner"
+import { LocalModelServerMemory } from "@/memory/local-model-server"
+import { BurnInTelemetry } from "@/quality/burnin-telemetry"
 
 const DOOM_LOOP_THRESHOLD = 3
 const log = Log.create({ service: "session.processor" })
@@ -89,9 +91,107 @@ interface ProcessorContext extends Input {
   currentTextID: string | undefined
   reasoningMap: Record<string, SessionV1.ReasoningPart>
   v2AssistantMessageID: SessionMessage.ID | undefined
+  stepIndex: number
 }
 
 type StreamEvent = LLMEvent
+
+function visibleText(parts: SessionV1.Part[]) {
+  return parts
+    .flatMap((part) => (part.type === "text" && !part.ignored && !part.synthetic ? [part.text] : []))
+    .join("\n\n")
+    .trim()
+}
+
+function asToolInput(input: unknown) {
+  const sanitized = BurnInTelemetry.sanitizeForPersistence(input)
+  return isRecord(sanitized) ? sanitized : { value: sanitized }
+}
+
+function boundedToolOutput(input: string) {
+  const limit = 16_000
+  if (input.length <= limit) return input
+  return `${input.slice(0, limit)}\n...[truncated ${input.length - limit} chars]`
+}
+
+function toolDuration(part: SessionV1.ToolPart, end = Date.now()) {
+  if (part.state.status === "pending") return undefined
+  const finish = part.state.status === "running" ? end : part.state.time.end
+  return Math.max(0, finish - part.state.time.start)
+}
+
+function openVikingSkillURI(part: SessionV1.ToolPart) {
+  if (part.tool !== "skill") return undefined
+  const name = stringField(part.state.input, "name") ?? stringField(part.state.input, "skill")
+  if (!name) return undefined
+  return `viking://agent/model-server/skills/${encodeURIComponent(name)}`
+}
+
+function openVikingToolPart(part: SessionV1.ToolPart): LocalModelServerMemory.CaptureMessagePart {
+  const output =
+    part.state.status === "completed" ? part.state.output : part.state.status === "error" ? part.state.error : ""
+  return {
+    type: "tool",
+    tool_id: part.callID,
+    tool_name: part.tool,
+    skill_uri: openVikingSkillURI(part),
+    tool_input: asToolInput(part.state.input),
+    tool_output: boundedToolOutput(output),
+    tool_status: part.state.status,
+    duration_ms: toolDuration(part),
+    prompt_tokens: BurnInTelemetry.estimateTokens(part.state.input),
+    completion_tokens: BurnInTelemetry.estimateTokens(output),
+  }
+}
+
+function openVikingAssistantParts(parts: SessionV1.Part[]) {
+  return parts.flatMap((part): LocalModelServerMemory.CaptureMessagePart[] => {
+    if (part.type === "text" && !part.ignored && !part.synthetic && part.text.trim()) {
+      return [{ type: "text", text: part.text.trim() }]
+    }
+    if (part.type === "tool") return [openVikingToolPart(part)]
+    return []
+  })
+}
+
+function stringField(input: Record<string, unknown> | undefined, key: string) {
+  const value = input?.[key]
+  return typeof value === "string" && value.trim() ? value.trim() : undefined
+}
+
+function parseJsonObject(input: string | undefined) {
+  if (!input) return undefined
+  try {
+    const parsed = JSON.parse(input)
+    return isRecord(parsed) ? parsed : undefined
+  } catch {
+    return undefined
+  }
+}
+
+function memoryResultCount(input: unknown): number | undefined {
+  if (Array.isArray(input)) return input.length
+  if (!isRecord(input)) return input === undefined ? undefined : input === null ? 0 : 1
+  for (const key of ["result", "results", "items", "nodes", "data"]) {
+    const value = input[key]
+    if (Array.isArray(value)) return value.length
+    if (isRecord(value)) return 1
+  }
+  return Object.keys(input).length ? 1 : 0
+}
+
+function memoryReturnedURICount(input: unknown): number {
+  if (Array.isArray(input)) return input.reduce((total, value) => total + memoryReturnedURICount(value), 0)
+  if (!isRecord(input)) return 0
+  const own = typeof input.uri === "string" && input.uri ? 1 : 0
+  return (
+    own +
+    ["result", "results", "items", "nodes", "data"].reduce(
+      (total, key) => total + memoryReturnedURICount(input[key]),
+      0,
+    )
+  )
+}
 
 export class Service extends Context.Service<Service, Interface>()("@opencode/SessionProcessor") {}
 
@@ -112,6 +212,8 @@ export const layer = Layer.effect(
     const events = yield* EventV2Bridge.Service
     const flags = yield* RuntimeFlags.Service
     const database = yield* Database.Service
+    const telemetryOption = yield* Effect.serviceOption(BurnInTelemetry.Service)
+    const telemetry = Option.getOrElse(telemetryOption, () => BurnInTelemetry.noop)
 
     const create = Effect.fn("SessionProcessor.create")(function* (input: Input) {
       // Pre-capture snapshot before the LLM stream starts. The AI SDK
@@ -132,10 +234,101 @@ export const layer = Layer.effect(
         currentTextID: undefined,
         reasoningMap: {},
         v2AssistantMessageID: undefined,
+        stepIndex: -1,
       }
       const mirrorAssistant = flags.experimentalEventSystem && !input.assistantMessage.summary
       let aborted = false
       const slog = log.clone().tag("session.id", input.sessionID).tag("messageID", input.assistantMessage.id)
+      const telemetryMode = () => (telemetry.mode === "verbose" ? "verbose" : "standard")
+      const currentStepIndex = () => (ctx.stepIndex >= 0 ? ctx.stepIndex : undefined)
+      const recordTelemetry = (event: BurnInTelemetry.RecordInput) =>
+        telemetry.record({
+          sessionID: ctx.sessionID,
+          messageID: ctx.assistantMessage.id,
+          stepIndex: currentStepIndex(),
+          ...event,
+        })
+
+      const recordToolSettled = (
+        part: SessionV1.ToolPart | undefined,
+        value: StreamEvent,
+        status: string,
+        error?: unknown,
+      ) =>
+        telemetry.mode === "off" || (value.type !== "tool-result" && value.type !== "tool-error")
+          ? Effect.void
+          : recordTelemetry({
+              event: "tool.settled",
+              callID: value.id,
+              entity: { kind: "tool", name: value.name },
+              status,
+              durationMs: part ? toolDuration(part) : undefined,
+              tokens: {
+                input: {
+                  value: BurnInTelemetry.estimateTokens(part?.state.input ?? {}),
+                  exact: false,
+                  source: "tool_input_estimate",
+                },
+                output: {
+                  value: BurnInTelemetry.estimateTokens(
+                    value.type === "tool-result" && value.result.type !== "error"
+                      ? value.result.value
+                      : error instanceof Error
+                        ? error.message
+                        : (error ?? ""),
+                  ),
+                  exact: false,
+                  source: "tool_output_estimate",
+                },
+              },
+              args: part?.state.input,
+              metadata: {
+                provider_executed:
+                  value.type === "tool-result"
+                    ? value.providerExecuted === true || part?.metadata?.providerExecuted === true
+                    : part?.metadata?.providerExecuted === true,
+                provider_metadata: value.providerMetadata,
+                output:
+                  value.type === "tool-result"
+                    ? BurnInTelemetry.outputSummary(value.result.value, telemetryMode())
+                    : undefined,
+              },
+              error,
+            })
+
+      const recordMemoryTool = (
+        event: "memory.search" | "memory.read",
+        part: SessionV1.ToolPart | undefined,
+        output: string,
+      ) => {
+        if (telemetry.mode === "off") return Effect.void
+        const parsed = parseJsonObject(output)
+        const result = parsed?.result ?? parsed
+        const status = typeof parsed?.status === "string" ? parsed.status : "ok"
+        return recordTelemetry({
+          event,
+          callID: part?.callID,
+          entity: {
+            kind: "memory",
+            name: event === "memory.search" ? "memsearch" : "memread",
+            uri:
+              event === "memory.read"
+                ? stringField(part?.state.input, "uri")
+                : stringField(part?.state.input, "target_uri"),
+          },
+          status,
+          durationMs: part ? toolDuration(part) : undefined,
+          args: part?.state.input,
+          metadata: {
+            result_count: memoryResultCount(result),
+            returned_uri_count: memoryReturnedURICount(result),
+            no_result: (memoryResultCount(result) ?? 0) === 0,
+            fallback: status === "fallback" || status === "error",
+            mode: parsed?.mode,
+            level: parsed?.level,
+          },
+        })
+      }
 
       const parse = (e: unknown) =>
         MessageV2.fromError(e, {
@@ -523,6 +716,17 @@ export const layer = Layer.effect(
                 ? { ...value.providerMetadata, providerExecuted: true }
                 : value.providerMetadata,
             }))
+            yield* recordTelemetry({
+              event: "tool.called",
+              callID: value.id,
+              entity: { kind: "tool", name: value.name },
+              status: "running",
+              args: input,
+              metadata: {
+                provider_executed: toolCall.part.metadata?.providerExecuted === true || value.providerExecuted === true,
+                provider_metadata: value.providerMetadata,
+              },
+            })
 
             const parts = yield* MessageV2.parts(ctx.assistantMessage.id).pipe(
               Effect.provideService(Database.Service, database),
@@ -558,6 +762,7 @@ export const layer = Layer.effect(
             const toolCall = yield* readToolCall(value.id)
             if (!toolCall && value.result.type === "error") return
             if (value.result.type === "error") {
+              yield* recordToolSettled(toolCall?.part, value, "error", value.result.value)
               // TODO(v2): Temporary dual-write while migrating session messages to v2 events.
               if (mirrorAssistant) {
                 const assistantMessageID = yield* requireV2AssistantMessage(toolCall?.call)
@@ -649,12 +854,37 @@ export const layer = Layer.effect(
                   timestamp: DateTime.makeUnsafe(Date.now()),
                 })
             }
+            yield* recordToolSettled(toolCall?.part, value, "completed")
+            if (value.name === "skill") {
+              const skillName =
+                stringField(toolCall?.part.state.input, "name") ?? stringField(toolCall?.part.state.input, "skill")
+              yield* recordTelemetry({
+                event: "skill.loaded",
+                callID: value.id,
+                entity: {
+                  kind: "skill",
+                  name: skillName ?? value.name,
+                  uri: toolCall?.part ? openVikingSkillURI(toolCall.part) : undefined,
+                },
+                status: "completed",
+                durationMs: toolCall?.part ? toolDuration(toolCall.part) : undefined,
+                args: toolCall?.part.state.input,
+                metadata: output.metadata,
+              })
+            }
+            if (value.name === "memsearch") {
+              yield* recordMemoryTool("memory.search", toolCall?.part, output.output)
+            }
+            if (value.name === "memread") {
+              yield* recordMemoryTool("memory.read", toolCall?.part, output.output)
+            }
             yield* completeToolCall(value.id, output)
             return
           }
 
           case "tool-error": {
             const toolCall = yield* readToolCall(value.id)
+            yield* recordToolSettled(toolCall?.part, value, "error", value.error ?? new Error(value.message))
             // TODO(v2): Temporary dual-write while migrating session messages to v2 events.
             if (mirrorAssistant) {
               const assistantMessageID = yield* requireV2AssistantMessage(toolCall?.call)
@@ -681,6 +911,7 @@ export const layer = Layer.effect(
             throw new Error(value.message)
 
           case "step-start":
+            ctx.stepIndex++
             if (!ctx.snapshot) ctx.snapshot = yield* snapshot.track()
             if (!ctx.assistantMessage.summary) {
               // TODO(v2): Temporary dual-write while migrating session messages to v2 events.
@@ -708,6 +939,24 @@ export const layer = Layer.effect(
               model: ctx.model,
               usage: value.usage ?? new Usage({}),
               metadata: value.providerMetadata,
+            })
+            yield* recordTelemetry({
+              event: "turn.summary",
+              entity: { kind: "turn" },
+              status: value.reason,
+              tokens: {
+                input: { value: usage.tokens.input, exact: true, source: "step-finish.tokens" },
+                output: { value: usage.tokens.output, exact: true, source: "step-finish.tokens" },
+                reasoning: { value: usage.tokens.reasoning, exact: true, source: "step-finish.tokens" },
+                cache_read: { value: usage.tokens.cache.read, exact: true, source: "step-finish.tokens" },
+                cache_write: { value: usage.tokens.cache.write, exact: true, source: "step-finish.tokens" },
+              },
+              metadata: {
+                cost: usage.cost,
+                reason: value.reason,
+                provider_metadata: value.providerMetadata,
+                prompt_tokens_details: usage.promptTokensDetails,
+              },
             })
             if (!ctx.assistantMessage.summary) {
               // TODO(v2): Temporary dual-write while migrating session messages to v2 events.
@@ -910,6 +1159,16 @@ export const layer = Layer.effect(
           }
           const end = Date.now()
           const metadata = "metadata" in part.state && isRecord(part.state.metadata) ? part.state.metadata : {}
+          yield* recordTelemetry({
+            event: "tool.settled",
+            callID: toolCallID,
+            entity: { kind: "tool", name: part.tool },
+            status: "aborted",
+            durationMs: toolDuration(part, end),
+            args: part.state.input,
+            metadata: { interrupted: true },
+            error: "Tool execution aborted",
+          })
           yield* session.updatePart({
             ...part,
             state: {
@@ -924,6 +1183,53 @@ export const layer = Layer.effect(
         ctx.toolcalls = {}
         ctx.assistantMessage.time.completed = Date.now()
         yield* session.updateMessage(ctx.assistantMessage)
+        if (!ctx.assistantMessage.summary && !ctx.assistantMessage.error) {
+          const parts = yield* MessageV2.parts(ctx.assistantMessage.id).pipe(
+            Effect.provideService(Database.Service, database),
+            Effect.catch(() => Effect.succeed([] as SessionV1.Part[])),
+          )
+          const memoryText = visibleText(parts)
+          const memoryParts = openVikingAssistantParts(parts)
+          const toolParts = parts.filter((part): part is SessionV1.ToolPart => part.type === "tool")
+          yield* recordTelemetry({
+            event: "session.summary",
+            entity: { kind: "session" },
+            status: "completed",
+            metadata: {
+              parts: parts.length,
+              text_chars: memoryText.length,
+              tool_calls: toolParts.length,
+              tool_failures: toolParts.filter((part) => part.state.status === "error").length,
+              tool_aborts: toolParts.filter(
+                (part) => part.state.status === "error" && part.state.metadata?.interrupted === true,
+              ).length,
+            },
+          })
+          const telemetryHealth = yield* telemetry.health()
+          yield* telemetry.record({
+            event: "sink.health",
+            entity: { kind: "sink", name: "ndjson" },
+            status: telemetryHealth.sinkErrors > 0 ? "degraded" : "ok",
+            metadata: telemetryHealth,
+          })
+          if (memoryParts.length) {
+            yield* Effect.gen(function* () {
+              const memory = yield* Effect.serviceOption(LocalModelServerMemory.Service)
+              if (Option.isSome(memory)) {
+                yield* memory.value
+                  .captureMessageParts({
+                    sessionID: ctx.sessionID,
+                    messageID: ctx.assistantMessage.id,
+                    providerID: ctx.model.providerID,
+                    role: "assistant",
+                    content: memoryText,
+                    parts: memoryParts,
+                  })
+                  .pipe(Effect.ignore)
+              }
+            }).pipe(Effect.forkIn(scope))
+          }
+        }
       })
 
       const halt = Effect.fn("SessionProcessor.halt")(function* (e: unknown) {
@@ -1066,6 +1372,8 @@ export const defaultLayer = Layer.suspend(() =>
     Layer.provide(RuntimeFlags.defaultLayer),
     Layer.provide(Database.defaultLayer),
     Layer.provide(EventV2Bridge.defaultLayer),
+    Layer.provide(LocalModelServerMemory.defaultLayer),
+    Layer.provide(BurnInTelemetry.defaultLayer),
   ),
 )
 
