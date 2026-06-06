@@ -15,6 +15,8 @@ import { Parameters as Glob } from "../../src/tool/glob"
 import { Parameters as Grep } from "../../src/tool/grep"
 import { Parameters as Invalid } from "../../src/tool/invalid"
 import { Parameters as Lsp } from "../../src/tool/lsp"
+import { Parameters as MemRead } from "../../src/tool/memread"
+import { Parameters as MemSearch } from "../../src/tool/memsearch"
 import { Parameters as Plan } from "../../src/tool/plan"
 import { Parameters as ProjectDossier } from "../../src/tool/project_dossier"
 import { Parameters as Question } from "../../src/tool/question"
@@ -48,6 +50,8 @@ describe("tool parameters", () => {
     test("grep", () => expect(toJsonSchema(Grep)).toMatchSnapshot())
     test("invalid", () => expect(toJsonSchema(Invalid)).toMatchSnapshot())
     test("lsp", () => expect(toJsonSchema(Lsp)).toMatchSnapshot())
+    test("memread", () => expect(toJsonSchema(MemRead)).toMatchSnapshot())
+    test("memsearch", () => expect(toJsonSchema(MemSearch)).toMatchSnapshot())
     test("plan", () => expect(toJsonSchema(Plan)).toMatchSnapshot())
     test("project_dossier", () => expect(toJsonSchema(ProjectDossier)).toMatchSnapshot())
     test("question", () => expect(toJsonSchema(Question)).toMatchSnapshot())
@@ -199,6 +203,52 @@ describe("tool parameters", () => {
     })
     test("rejects unknown operation", () => {
       expect(accepts(Lsp, { operation: "bogus", filePath: "/a.ts", line: 1, character: 1 })).toBe(false)
+    })
+  })
+
+  describe("memread", () => {
+    test("accepts uri-only", () => {
+      expect(parse(MemRead, { uri: "viking://resources/codex-memories/MEMORY.md" })).toEqual({
+        uri: "viking://resources/codex-memories/MEMORY.md",
+      })
+    })
+    test("accepts optional level", () => {
+      expect(parse(MemRead, { uri: "viking://resources/skills-library", level: "overview" }).level).toBe(
+        "overview",
+      )
+    })
+    test("rejects unknown level", () => {
+      expect(accepts(MemRead, { uri: "viking://resources/skills-library", level: "full" })).toBe(false)
+    })
+    test("rejects missing uri", () => {
+      expect(accepts(MemRead, {})).toBe(false)
+    })
+  })
+
+  describe("memsearch", () => {
+    test("accepts query-only", () => {
+      expect(parse(MemSearch, { query: "prior decision" })).toEqual({ query: "prior decision" })
+    })
+    test("accepts all optional fields", () => {
+      const parsed = parse(MemSearch, {
+        query: "prior decision",
+        target_uri: "viking://resources/codex-memories",
+        mode: "deep",
+        limit: 5,
+        score_threshold: 0.2,
+      })
+      expect(parsed.mode).toBe("deep")
+      expect(parsed.limit).toBe(5)
+      expect(parsed.score_threshold).toBe(0.2)
+    })
+    test("rejects unknown mode", () => {
+      expect(accepts(MemSearch, { query: "prior decision", mode: "semantic" })).toBe(false)
+    })
+    test("rejects non-positive limit", () => {
+      expect(accepts(MemSearch, { query: "prior decision", limit: 0 })).toBe(false)
+    })
+    test("rejects missing query", () => {
+      expect(accepts(MemSearch, {})).toBe(false)
     })
   })
 

@@ -50,6 +50,26 @@ do not replace tool defaults. `ContextIntel.Service` is part of the registry
 graph whenever those tools are initialized, so macro telemetry and adoption can
 be measured through the same production service path.
 
+## Local model memory tools
+
+`memsearch` and `memread` are native opencode tools registered only when the
+active provider is `local-model-server`. They are not plugin tools; their Effect
+schemas, JSON Schema metadata, registry gating, and tests live in-repo.
+
+Both tools call the local model-server OpenViking facade rather than OpenViking
+directly:
+
+- `memsearch` posts to `/v1/openviking/search` with `query`, optional
+  `target_uri`, `mode: auto|fast|deep`, `limit`, and `score_threshold`.
+- `memread` posts to `/v1/openviking/read` with `uri` and
+  `level: auto|abstract|overview|read`.
+
+Session persistence is also provider-gated. When a user message or completed
+assistant message uses the `local-model-server` provider, opencode mirrors only
+visible text parts to model-server. Synthetic prompt text, files, and structured
+tool parts are not mirrored; model-server owns the OpenViking session mapping,
+dedupe, commit scheduling, and fail-open behavior.
+
 ## Context intelligence burn-in
 
 `opencode stats --context` appends a `CONTEXT INTELLIGENCE BURN-IN` section to
@@ -86,6 +106,8 @@ These exported tool definitions currently use `Tool.define(...)` in `src/tool`:
 - [x] `grep.ts`
 - [x] `invalid.ts`
 - [x] `lsp.ts`
+- [x] `memread.ts`
+- [x] `memsearch.ts`
 - [x] `plan.ts`
 - [x] `question.ts`
 - [x] `read.ts`

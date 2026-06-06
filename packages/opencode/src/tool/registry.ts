@@ -56,6 +56,9 @@ import { BackgroundJob } from "@/background/job"
 import { RuntimeFlags } from "@/effect/runtime-flags"
 import { ProviderV2 } from "@opencode-ai/core/provider"
 import { ContextIntel } from "@/context-intel"
+import { LocalModelServerMemory } from "@/memory/local-model-server"
+import { MemReadTool } from "./memread"
+import { MemSearchTool } from "./memsearch"
 import { ProjectDossierTool } from "./project_dossier"
 import { SemanticSearchTool } from "./semantic_search"
 import { ViewOutlineTool } from "./view_outline"
@@ -117,6 +120,7 @@ export const layer: Layer.Layer<
   | RuntimeFlags.Service
   | Database.Service
   | ContextIntel.Service
+  | LocalModelServerMemory.Service
 > = Layer.effect(
   Service,
   Effect.gen(function* () {
@@ -148,6 +152,8 @@ export const layer: Layer.Layer<
     const projectDossier = yield* ProjectDossierTool
     const semanticSearch = yield* SemanticSearchTool
     const viewOutline = yield* ViewOutlineTool
+    const memsearch = yield* MemSearchTool
+    const memread = yield* MemReadTool
     const agent = yield* Agent.Service
 
     const state = yield* InstanceState.make<State>(
@@ -260,6 +266,8 @@ export const layer: Layer.Layer<
           project_dossier: Tool.init(projectDossier),
           semantic_search: Tool.init(semanticSearch),
           view_outline: Tool.init(viewOutline),
+          memsearch: Tool.init(memsearch),
+          memread: Tool.init(memread),
         })
 
         return {
@@ -277,6 +285,8 @@ export const layer: Layer.Layer<
             tool.fetch,
             tool.todo,
             tool.search,
+            tool.memsearch,
+            tool.memread,
             ...(flags.experimentalMacroTools || flags.experimentalContextTools
               ? [tool.project_dossier, tool.view_outline]
               : []),
@@ -341,6 +351,9 @@ export const layer: Layer.Layer<
         if (tool.id === WebSearchTool.id) {
           return webSearchEnabled(input.providerID, { exa: flags.enableExa, parallel: flags.enableParallel })
         }
+        if (tool.id === MemSearchTool.id || tool.id === MemReadTool.id) {
+          return LocalModelServerMemory.isLocalModelServerProvider(input.providerID)
+        }
 
         const usePatch =
           input.modelID.includes("gpt-") && !input.modelID.includes("oss") && !input.modelID.includes("gpt-4")
@@ -396,6 +409,7 @@ export const defaultLayer = Layer.suspend(() =>
   layer
     .pipe(
       Layer.provide(ContextIntel.layer),
+      Layer.provide(LocalModelServerMemory.defaultLayer),
       Layer.provide(Config.defaultLayer),
       Layer.provide(Plugin.defaultLayer),
       Layer.provide(Question.defaultLayer),

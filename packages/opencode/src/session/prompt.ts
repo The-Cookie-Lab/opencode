@@ -64,6 +64,7 @@ import { SessionReminders } from "./reminders"
 import { SessionTools } from "./tools"
 import { LLMEvent } from "@opencode-ai/llm"
 import { ContextPlanner } from "./context-planner"
+import { LocalModelServerMemory } from "@/memory/local-model-server"
 
 // @ts-ignore
 globalThis.AI_SDK_LOG_WARNINGS = false
@@ -101,6 +102,13 @@ function instructionPrompt(parts: SessionV1.Part[]) {
       return []
     })
     .join("\n")
+}
+
+function visibleText(parts: SessionV1.Part[]) {
+  return parts
+    .flatMap((part) => (part.type === "text" && !part.ignored && !part.synthetic ? [part.text] : []))
+    .join("\n\n")
+    .trim()
 }
 
 export interface Interface {
@@ -1104,6 +1112,23 @@ export const layer = Layer.effect(
 
       yield* sessions.updateMessage(info)
       for (const part of parts) yield* sessions.updatePart(part)
+      const memoryText = visibleText(parts)
+      if (memoryText) {
+        yield* Effect.gen(function* () {
+          const memory = yield* Effect.serviceOption(LocalModelServerMemory.Service)
+          if (Option.isSome(memory)) {
+            yield* memory.value
+              .captureMessage({
+                sessionID: input.sessionID,
+                messageID: info.id,
+                providerID: info.model.providerID,
+                role: "user",
+                content: memoryText,
+              })
+              .pipe(Effect.ignore)
+          }
+        }).pipe(Effect.forkIn(scope))
+      }
       const nextPrompt = parts.reduce(
         (result, part) => {
           if (part.type === "text") {
@@ -1666,6 +1691,7 @@ export const defaultLayer = Layer.suspend(() =>
       Layer.provide(SessionSummary.defaultLayer),
       Layer.provide(Image.defaultLayer),
     )
+    .pipe(Layer.provide(LocalModelServerMemory.defaultLayer))
     .pipe(
       Layer.provide(
         Layer.mergeAll(

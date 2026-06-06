@@ -1,7 +1,7 @@
 import { PermissionV1 } from "@opencode-ai/core/v1/permission"
 import { Image } from "@/image/image"
 import { SessionV1 } from "@opencode-ai/core/v1/session"
-import { Cause, Deferred, Effect, Exit, Layer, Context, Scope, Schema } from "effect"
+import { Cause, Deferred, Effect, Exit, Layer, Context, Scope, Schema, Option } from "effect"
 import * as Stream from "effect/Stream"
 import { Agent } from "@/agent/agent"
 import { Config } from "@/config/config"
@@ -33,6 +33,7 @@ import { RuntimeFlags } from "@/effect/runtime-flags"
 import { toolFileSourceFromUri, Usage, type LLMEvent } from "@opencode-ai/llm"
 import { ToolOutput } from "@opencode-ai/core/tool-output"
 import type { ContextPlanner } from "./context-planner"
+import { LocalModelServerMemory } from "@/memory/local-model-server"
 
 const DOOM_LOOP_THRESHOLD = 3
 const log = Log.create({ service: "session.processor" })
@@ -92,6 +93,13 @@ interface ProcessorContext extends Input {
 }
 
 type StreamEvent = LLMEvent
+
+function visibleText(parts: SessionV1.Part[]) {
+  return parts
+    .flatMap((part) => (part.type === "text" && !part.ignored && !part.synthetic ? [part.text] : []))
+    .join("\n\n")
+    .trim()
+}
 
 export class Service extends Context.Service<Service, Interface>()("@opencode/SessionProcessor") {}
 
@@ -924,6 +932,29 @@ export const layer = Layer.effect(
         ctx.toolcalls = {}
         ctx.assistantMessage.time.completed = Date.now()
         yield* session.updateMessage(ctx.assistantMessage)
+        if (!ctx.assistantMessage.summary && !ctx.assistantMessage.error) {
+          const parts = yield* MessageV2.parts(ctx.assistantMessage.id).pipe(
+            Effect.provideService(Database.Service, database),
+            Effect.catch(() => Effect.succeed([] as SessionV1.Part[])),
+          )
+          const memoryText = visibleText(parts)
+          if (memoryText) {
+            yield* Effect.gen(function* () {
+              const memory = yield* Effect.serviceOption(LocalModelServerMemory.Service)
+              if (Option.isSome(memory)) {
+                yield* memory.value
+                  .captureMessage({
+                    sessionID: ctx.sessionID,
+                    messageID: ctx.assistantMessage.id,
+                    providerID: ctx.model.providerID,
+                    role: "assistant",
+                    content: memoryText,
+                  })
+                  .pipe(Effect.ignore)
+              }
+            }).pipe(Effect.forkIn(scope))
+          }
+        }
       })
 
       const halt = Effect.fn("SessionProcessor.halt")(function* (e: unknown) {
@@ -1066,6 +1097,7 @@ export const defaultLayer = Layer.suspend(() =>
     Layer.provide(RuntimeFlags.defaultLayer),
     Layer.provide(Database.defaultLayer),
     Layer.provide(EventV2Bridge.defaultLayer),
+    Layer.provide(LocalModelServerMemory.defaultLayer),
   ),
 )
 

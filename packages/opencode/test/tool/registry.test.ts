@@ -38,6 +38,7 @@ import { RuntimeFlags } from "@/effect/runtime-flags"
 import { ProviderV2 } from "@opencode-ai/core/provider"
 import { ContextIntel } from "@/context-intel"
 import { ModelV2 } from "@opencode-ai/core/model"
+import { LocalModelServerMemory } from "@/memory/local-model-server"
 
 const node = CrossSpawnSpawner.defaultLayer
 const configLayer = TestConfig.layer({
@@ -53,6 +54,7 @@ const registryLayer = (opts: RegistryLayerOptions = {}) =>
   ToolRegistry.layer
     .pipe(
       Layer.provide(ContextIntel.layer),
+      Layer.provide(LocalModelServerMemory.defaultLayer),
       Layer.provide(configLayer),
       Layer.provide(opts.plugin ?? Plugin.defaultLayer),
       Layer.provide(Question.defaultLayer),
@@ -186,6 +188,35 @@ describe("tool.registry", () => {
       const ids = yield* registry.ids()
 
       expect(ids).not.toContain("task_status")
+    }),
+  )
+
+  it.instance("gates memory tools to the local model-server provider", () =>
+    Effect.gen(function* () {
+      const registry = yield* ToolRegistry.Service
+      const agent = yield* Agent.Service
+      const build = yield* agent.get("build")
+      if (!build) throw new Error("build agent not found")
+
+      const remoteToolIDs = (
+        yield* registry.tools({
+          providerID: ProviderV2.ID.opencode,
+          modelID: ModelV2.ID.make("test"),
+          agent: build,
+        })
+      ).map((tool) => tool.id)
+      const localToolIDs = (
+        yield* registry.tools({
+          providerID: ProviderV2.ID.make("local-model-server"),
+          modelID: ModelV2.ID.make("test"),
+          agent: build,
+        })
+      ).map((tool) => tool.id)
+
+      expect(remoteToolIDs).not.toContain("memsearch")
+      expect(remoteToolIDs).not.toContain("memread")
+      expect(localToolIDs).toContain("memsearch")
+      expect(localToolIDs).toContain("memread")
     }),
   )
 

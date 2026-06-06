@@ -60,6 +60,7 @@ import { ProviderV2 } from "@opencode-ai/core/provider"
 import { ContextIntel } from "@/context-intel"
 import { ContextPlanner, type ContextPlan } from "@/session/context-planner"
 import { ModelV2 } from "@opencode-ai/core/model"
+import { LocalModelServerMemory } from "@/memory/local-model-server"
 
 void Log.init({ print: false })
 
@@ -174,7 +175,11 @@ const blockingProcessor = Layer.succeed(
   }),
 )
 
-function makePrompt(input?: { processor?: "blocking"; planner?: Layer.Layer<ContextPlanner.Service> }) {
+function makePrompt(input?: {
+  processor?: "blocking"
+  planner?: Layer.Layer<ContextPlanner.Service>
+  memory?: Layer.Layer<LocalModelServerMemory.Service>
+}) {
   const deps = Layer.mergeAll(
     Session.defaultLayer,
     Snapshot.defaultLayer,
@@ -193,6 +198,7 @@ function makePrompt(input?: { processor?: "blocking"; planner?: Layer.Layer<Cont
     status,
     Database.defaultLayer,
     EventV2Bridge.defaultLayer,
+    input?.memory ?? LocalModelServerMemory.defaultLayer,
   ).pipe(Layer.provideMerge(infra))
   const question = Question.layer.pipe(Layer.provideMerge(deps))
   const todo = Todo.layer.pipe(Layer.provideMerge(deps))
@@ -245,17 +251,39 @@ function makePrompt(input?: { processor?: "blocking"; planner?: Layer.Layer<Cont
   )
 }
 
-function makeHttp(input?: { processor?: "blocking"; planner?: Layer.Layer<ContextPlanner.Service> }) {
+function makeHttp(input?: {
+  processor?: "blocking"
+  planner?: Layer.Layer<ContextPlanner.Service>
+  memory?: Layer.Layer<LocalModelServerMemory.Service>
+}) {
   return Layer.mergeAll(TestLLMServer.layer, makePrompt(input))
 }
 
-function makeHttpNoLLMServer(input?: { processor?: "blocking"; planner?: Layer.Layer<ContextPlanner.Service> }) {
+function makeHttpNoLLMServer(input?: {
+  processor?: "blocking"
+  planner?: Layer.Layer<ContextPlanner.Service>
+  memory?: Layer.Layer<LocalModelServerMemory.Service>
+}) {
   return makePrompt(input)
 }
 
 const it = testEffect(makeHttp())
 const noLLMServer = testEffect(makeHttpNoLLMServer())
 const raceNoLLMServer = testEffect(makeHttpNoLLMServer({ processor: "blocking" }))
+const memoryMirrorInputs: LocalModelServerMemory.CaptureMessageInput[] = []
+const failingMemory = Layer.succeed(
+  LocalModelServerMemory.Service,
+  LocalModelServerMemory.Service.of({
+    captureMessage: (input) =>
+      Effect.sync(() => {
+        memoryMirrorInputs.push(input)
+      }).pipe(Effect.andThen(Effect.fail(new Error("offline")))),
+    commitSession: () => Effect.succeed({ status: "fallback" }),
+    search: () => Effect.fail(new Error("unused")),
+    read: () => Effect.fail(new Error("unused")),
+  }),
+)
+const memoryNoLLMServer = testEffect(makeHttpNoLLMServer({ memory: failingMemory }))
 const handoffPlan: ContextPlan = {
   mode: "shadow",
   decision: "shadow",
@@ -541,6 +569,38 @@ it.instance("loop calls LLM and returns assistant message", () =>
     expect(parts.some((p) => p.type === "text" && p.text === "world")).toBe(true)
     expect(yield* llm.hits).toHaveLength(1)
   }),
+)
+
+memoryNoLLMServer.instance(
+  "user session mirroring fails open and captures only visible text",
+  () =>
+    Effect.gen(function* () {
+      memoryMirrorInputs.length = 0
+      const prompt = yield* SessionPrompt.Service
+      const sessions = yield* Session.Service
+      const chat = yield* sessions.create({ title: "Memory Mirror" })
+
+      const result = yield* prompt.prompt({
+        sessionID: chat.id,
+        agent: "build",
+        noReply: true,
+        parts: [{ type: "text", text: "visible memory text" }],
+      })
+
+      expect(result.info.role).toBe("user")
+      const mirrored = yield* pollWithTimeout(
+        Effect.sync(() => memoryMirrorInputs[0]),
+        "memory mirror was not attempted",
+      )
+      expect(mirrored).toMatchObject({
+        sessionID: chat.id,
+        messageID: result.info.id,
+        providerID: "test",
+        role: "user",
+        content: "visible memory text",
+      })
+    }),
+  { config: cfg },
 )
 
 it.instance("loop stops provider overflow instead of auto-compacting when disabled", () =>
