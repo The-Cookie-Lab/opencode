@@ -8,6 +8,7 @@ import { ContextIntel } from "@/context-intel"
 import { FetchHttpClient } from "effect/unstable/http"
 import { Git } from "@/git"
 import { LSP } from "@/lsp/lsp"
+import { LocalModelServerMemory } from "@/memory/local-model-server"
 import { MessageID, SessionID } from "@/session/schema"
 import { PermissionV1 } from "@opencode-ai/core/v1/permission"
 import { ProjectDossierTool } from "@/tool/project_dossier"
@@ -21,6 +22,8 @@ import { testEffect } from "../lib/effect"
 
 let lspAvailable = false
 let documentSymbols: unknown[] = []
+let openVikingSearchResult: Record<string, unknown> | undefined
+let openVikingSearchCalls: LocalModelServerMemory.SearchInput[] = []
 
 const lsp = Layer.succeed(
   LSP.Service,
@@ -51,6 +54,24 @@ const contextIntelLayer = ContextIntel.layer.pipe(
   Layer.provide(Ripgrep.defaultLayer),
 )
 
+const memory = Layer.succeed(
+  LocalModelServerMemory.Service,
+  LocalModelServerMemory.Service.of({
+    captureMessage: () => Effect.void,
+    captureMessageParts: () => Effect.void,
+    commitSession: () => Effect.succeed({ status: "ok" }),
+    search: (input) => {
+      const result = openVikingSearchResult
+      if (!result) return Effect.fail(new Error("openviking unavailable"))
+      return Effect.sync(() => {
+        openVikingSearchCalls.push(input)
+        return result
+      })
+    },
+    read: () => Effect.succeed({ status: "ok" }),
+  }),
+)
+
 const layer = Layer.mergeAll(
   Agent.defaultLayer,
   FSUtil.defaultLayer,
@@ -61,6 +82,7 @@ const layer = Layer.mergeAll(
   Ripgrep.defaultLayer,
   Truncate.defaultLayer,
   contextIntelLayer,
+  memory,
 )
 
 const it = testEffect(layer)
@@ -108,6 +130,8 @@ const initSemanticSearch = Effect.fn("MacroToolsTest.initSemanticSearch")(functi
 afterEach(async () => {
   lspAvailable = false
   documentSymbols = []
+  openVikingSearchResult = undefined
+  openVikingSearchCalls = []
   await disposeAllInstances()
 })
 
@@ -320,6 +344,90 @@ describe("macro tools", () => {
               path: "src",
               mode: "lexical",
             })
+          }),
+        { git: true },
+      ),
+    )
+
+    it.live("uses OpenViking backend for local-model-server semantic code search", () =>
+      provideTmpdirInstance(
+        (dir) =>
+          Effect.gen(function* () {
+            const fs = yield* FSUtil.Service
+            yield* fs.writeWithDirs(path.join(dir, "src", "auth.ts"), "export function refreshToken() { return 'ok' }\n")
+            openVikingSearchResult = {
+              status: "ok",
+              result: {
+                resources: [
+                  {
+                    uri: "viking://resources/workspace/code/src/auth.ts",
+                    abstract: "The auth module exposes refreshToken for token renewal.",
+                    score: 0.91,
+                  },
+                ],
+              },
+            }
+
+            const tool = yield* initSemanticSearch()
+            const result = yield* tool.execute(
+              { query: "refresh token", path: "src", max: 5 },
+              { ...ctx, extra: { model: { providerID: LocalModelServerMemory.providerID } } },
+            )
+
+            expect(result.metadata.mode).toBe("semantic")
+            expect(result.metadata.backend).toBe("openviking")
+            expect(result.metadata.indexed).toBe(true)
+            expect(result.output).toContain("src/auth.ts")
+            expect(result.output).toContain("refreshToken")
+            expect(openVikingSearchCalls[0]?.target_uri).toBe("viking://resources/workspace/code/src")
+          }),
+        { git: true },
+      ),
+    )
+
+    it.live("falls back to local search when OpenViking returns no workspace hits", () =>
+      provideTmpdirInstance(
+        (dir) =>
+          Effect.gen(function* () {
+            const fs = yield* FSUtil.Service
+            yield* fs.writeWithDirs(path.join(dir, "src", "auth.ts"), "export function refreshToken() { return 'ok' }\n")
+            openVikingSearchResult = { status: "ok", result: [] }
+
+            const tool = yield* initSemanticSearch()
+            const result = yield* tool.execute(
+              { query: "refresh token", path: "src", max: 5 },
+              { ...ctx, extra: { model: { providerID: LocalModelServerMemory.providerID } } },
+            )
+
+            expect(openVikingSearchCalls).toHaveLength(1)
+            expect(result.metadata.backend).toBe("ripgrep")
+            expect(result.metadata.mode).toBe("lexical")
+            expect(result.output).toContain("refreshToken")
+          }),
+        { git: true },
+      ),
+    )
+
+    it.live("keeps lexical mode local-only even with local-model-server provider", () =>
+      provideTmpdirInstance(
+        (dir) =>
+          Effect.gen(function* () {
+            const fs = yield* FSUtil.Service
+            yield* fs.writeWithDirs(path.join(dir, "src", "auth.ts"), "export const token = true\n")
+            openVikingSearchResult = {
+              status: "ok",
+              result: [{ uri: "viking://resources/workspace/code/src/auth.ts", snippet: "token", score: 1 }],
+            }
+
+            const tool = yield* initSemanticSearch()
+            const result = yield* tool.execute(
+              { query: "token", path: "src", mode: "lexical" },
+              { ...ctx, extra: { model: { providerID: LocalModelServerMemory.providerID } } },
+            )
+
+            expect(openVikingSearchCalls).toHaveLength(0)
+            expect(result.metadata.backend).toBe("ripgrep")
+            expect(result.metadata.mode).toBe("lexical")
           }),
         { git: true },
       ),

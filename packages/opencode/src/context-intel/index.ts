@@ -176,7 +176,7 @@ export type SearchMetadata = {
   scheduled: boolean
   count: number
   truncated: boolean
-  backend: "ripgrep" | "local_sparse"
+  backend: "ripgrep" | "local_sparse" | "openviking"
   telemetry?: TelemetrySnapshot
 }
 
