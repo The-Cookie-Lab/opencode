@@ -1,7 +1,7 @@
 import type { Provider } from "@/provider/provider"
 import { LocalModelServerMemory } from "@/memory/local-model-server"
 import { Effect, Schema } from "effect"
-import * as Tool from "./tool"
+import { Tool } from "./tool"
 
 export const Parameters = Schema.Struct({
   uri: Schema.String.annotate({ description: "viking:// URI to read from persisted memory." }),

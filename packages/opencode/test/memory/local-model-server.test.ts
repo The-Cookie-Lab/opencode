@@ -4,7 +4,7 @@ import { ProviderV2 } from "@opencode-ai/core/provider"
 import { ModelV2 } from "@opencode-ai/core/model"
 import { Provider } from "@/provider/provider"
 import { LocalModelServerMemory } from "@/memory/local-model-server"
-import * as Log from "@opencode-ai/core/util/log"
+import { file } from "@opencode-ai/core/util/log"
 import fs from "fs/promises"
 
 const originalFetch = globalThis.fetch
@@ -49,11 +49,16 @@ afterEach(() => {
   globalThis.fetch = originalFetch
 })
 
-async function currentLog() {
-  await new Promise((resolve) => setTimeout(resolve, 20))
-  const file = Log.file()
-  if (!file) return ""
-  return fs.readFile(file, "utf8").catch(() => "")
+async function currentLog(needle: string) {
+  const logPath = file()
+  if (!logPath) return ""
+  let text = ""
+  for (let attempt = 0; attempt < 50; attempt++) {
+    text = await fs.readFile(logPath, "utf8").catch(() => "")
+    if (text.includes(needle)) return text
+    await Bun.sleep(10)
+  }
+  return text
 }
 
 describe("LocalModelServerMemory", () => {
@@ -150,7 +155,7 @@ describe("LocalModelServerMemory", () => {
     )
 
     expect(calls).toBe(1)
-    const logs = await currentLog()
+    const logs = await currentLog("capture failed")
     expect(logs).toContain("WARN")
     expect(logs).toContain("service=local-model-server.memory")
     expect(logs).toContain("capture failed")
@@ -244,7 +249,7 @@ describe("LocalModelServerMemory", () => {
     )
 
     expect(calls).toBe(1)
-    const logs = await currentLog()
+    const logs = await currentLog("structured capture failed")
     expect(logs).toContain("structured capture failed")
     expect(logs).toContain("partsCount=1")
     expect(logs).toContain("error=offline")
@@ -271,7 +276,7 @@ describe("LocalModelServerMemory", () => {
       ),
     ).rejects.toThrow("offline")
 
-    const logs = await currentLog()
+    const logs = await currentLog("search failed")
     expect(logs).toContain("WARN")
     expect(logs).toContain("service=local-model-server.memory")
     expect(logs).toContain("search failed")
@@ -280,6 +285,34 @@ describe("LocalModelServerMemory", () => {
     expect(logs).toContain("mode=auto")
     expect(logs).toContain("error=offline")
     expect(logs).not.toContain("prior decision")
+  })
+
+  test("read logs and surfaces model-server exceptions", async () => {
+    globalThis.fetch = (async () => {
+      throw new Error("offline")
+    }) as unknown as typeof fetch
+
+    await expect(
+      Effect.runPromise(
+        Effect.gen(function* () {
+          const memory = yield* LocalModelServerMemory.Service
+          yield* memory.read({
+            providerID: localProviderID,
+            uri: "viking://resources/skills-library",
+            level: "auto",
+          })
+        }).pipe(Effect.provide(layer)),
+      ),
+    ).rejects.toThrow("offline")
+
+    const logs = await currentLog("read failed")
+    expect(logs).toContain("WARN")
+    expect(logs).toContain("service=local-model-server.memory")
+    expect(logs).toContain("read failed")
+    expect(logs).toContain("uriChars=33")
+    expect(logs).toContain("level=auto")
+    expect(logs).toContain("error=offline")
+    expect(logs).not.toContain("viking://resources/skills-library")
   })
 
   test("captureMessage ignores non-local providers without posting", async () => {
