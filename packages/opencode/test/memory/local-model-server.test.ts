@@ -1,14 +1,15 @@
-import { afterEach, describe, expect, test } from "bun:test"
+import { afterEach, describe, expect, spyOn, test } from "bun:test"
 import { Effect, Layer } from "effect"
 import { ProviderV2 } from "@opencode-ai/core/provider"
 import { ModelV2 } from "@opencode-ai/core/model"
 import { Provider } from "@/provider/provider"
 import { LocalModelServerMemory } from "@/memory/local-model-server"
-import { file } from "@opencode-ai/core/util/log"
-import fs from "fs/promises"
+import { Log } from "@opencode-ai/core/util/log"
 
 const originalFetch = globalThis.fetch
 const localProviderID = ProviderV2.ID.make("local-model-server")
+const memoryLogger = Log.create({ service: "local-model-server.memory" })
+let restoreWarnings: (() => void) | undefined
 
 const providerLayer = Layer.succeed(
   Provider.Service,
@@ -47,18 +48,30 @@ const layer = Layer.mergeAll(LocalModelServerMemory.layer, providerLayer)
 
 afterEach(() => {
   globalThis.fetch = originalFetch
+  restoreWarnings?.()
+  restoreWarnings = undefined
 })
 
-async function currentLog(needle: string) {
-  const logPath = file()
-  if (!logPath) return ""
-  let text = ""
-  for (let attempt = 0; attempt < 50; attempt++) {
-    text = await fs.readFile(logPath, "utf8").catch(() => "")
-    if (text.includes(needle)) return text
-    await Bun.sleep(10)
+function captureWarnings() {
+  restoreWarnings?.()
+  const warn = spyOn(memoryLogger, "warn").mockImplementation(() => {})
+  restoreWarnings = () => warn.mockRestore()
+  return warn
+}
+
+function expectWarning(
+  warn: ReturnType<typeof captureWarnings>,
+  message: string,
+  expected: Record<string, unknown>,
+) {
+  expect(warn).toHaveBeenCalledTimes(1)
+  const [actualMessage, actualDetails] = warn.mock.calls[0] ?? []
+  expect(actualMessage).toBe(message)
+  const details = actualDetails as Record<string, unknown>
+  for (const [key, value] of Object.entries(expected)) {
+    expect(details[key]).toEqual(value)
   }
-  return text
+  return JSON.stringify(warn.mock.calls)
 }
 
 describe("LocalModelServerMemory", () => {
@@ -135,6 +148,7 @@ describe("LocalModelServerMemory", () => {
   })
 
   test("captureMessage fails open when model-server is unavailable", async () => {
+    const warn = captureWarnings()
     let calls = 0
     globalThis.fetch = (async () => {
       calls++
@@ -155,15 +169,14 @@ describe("LocalModelServerMemory", () => {
     )
 
     expect(calls).toBe(1)
-    const logs = await currentLog("capture failed")
-    expect(logs).toContain("WARN")
-    expect(logs).toContain("service=local-model-server.memory")
-    expect(logs).toContain("capture failed")
-    expect(logs).toContain("sessionID=oc-session-1")
-    expect(logs).toContain("messageID=msg-1")
-    expect(logs).toContain("contentChars=13")
-    expect(logs).toContain("error=offline")
-    expect(logs).not.toContain("remember this")
+    const logged = expectWarning(warn, "capture failed", {
+      sessionID: "oc-session-1",
+      messageID: "msg-1",
+      role: "user",
+      contentChars: 13,
+      error: "offline",
+    })
+    expect(logged).not.toContain("remember this")
   })
 
   test("captureMessageParts posts structured parts to the OpenViking facade", async () => {
@@ -227,6 +240,7 @@ describe("LocalModelServerMemory", () => {
   })
 
   test("captureMessageParts encodes session IDs and fails open without logging payloads", async () => {
+    const warn = captureWarnings()
     let calls = 0
     globalThis.fetch = (async (input: Parameters<typeof fetch>[0]) => {
       calls++
@@ -249,15 +263,20 @@ describe("LocalModelServerMemory", () => {
     )
 
     expect(calls).toBe(1)
-    const logs = await currentLog("structured capture failed")
-    expect(logs).toContain("structured capture failed")
-    expect(logs).toContain("partsCount=1")
-    expect(logs).toContain("error=offline")
-    expect(logs).not.toContain("assistant text")
-    expect(logs).not.toContain("secret output")
+    const logged = expectWarning(warn, "structured capture failed", {
+      sessionID: "oc/session 1",
+      messageID: "msg-2",
+      role: "assistant",
+      contentChars: 14,
+      partsCount: 1,
+      error: "offline",
+    })
+    expect(logged).not.toContain("assistant text")
+    expect(logged).not.toContain("secret output")
   })
 
   test("search logs and surfaces model-server exceptions", async () => {
+    const warn = captureWarnings()
     globalThis.fetch = (async () => {
       throw new Error("offline")
     }) as unknown as typeof fetch
@@ -276,18 +295,17 @@ describe("LocalModelServerMemory", () => {
       ),
     ).rejects.toThrow("offline")
 
-    const logs = await currentLog("search failed")
-    expect(logs).toContain("WARN")
-    expect(logs).toContain("service=local-model-server.memory")
-    expect(logs).toContain("search failed")
-    expect(logs).toContain("sessionID=oc-session-1")
-    expect(logs).toContain("queryChars=14")
-    expect(logs).toContain("mode=auto")
-    expect(logs).toContain("error=offline")
-    expect(logs).not.toContain("prior decision")
+    const logged = expectWarning(warn, "search failed", {
+      sessionID: "oc-session-1",
+      queryChars: 14,
+      mode: "auto",
+      error: "offline",
+    })
+    expect(logged).not.toContain("prior decision")
   })
 
   test("read logs and surfaces model-server exceptions", async () => {
+    const warn = captureWarnings()
     globalThis.fetch = (async () => {
       throw new Error("offline")
     }) as unknown as typeof fetch
@@ -305,14 +323,12 @@ describe("LocalModelServerMemory", () => {
       ),
     ).rejects.toThrow("offline")
 
-    const logs = await currentLog("read failed")
-    expect(logs).toContain("WARN")
-    expect(logs).toContain("service=local-model-server.memory")
-    expect(logs).toContain("read failed")
-    expect(logs).toContain("uriChars=33")
-    expect(logs).toContain("level=auto")
-    expect(logs).toContain("error=offline")
-    expect(logs).not.toContain("viking://resources/skills-library")
+    const logged = expectWarning(warn, "read failed", {
+      uriChars: 33,
+      level: "auto",
+      error: "offline",
+    })
+    expect(logged).not.toContain("viking://resources/skills-library")
   })
 
   test("captureMessage ignores non-local providers without posting", async () => {

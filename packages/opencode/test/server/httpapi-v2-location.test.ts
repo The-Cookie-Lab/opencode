@@ -30,17 +30,27 @@ const Event = Schema.Struct({
   }),
   data: Schema.Unknown,
 })
+const EventEnvelope = Schema.Struct({
+  id: Schema.String,
+  type: Schema.String,
+  data: Schema.Unknown,
+})
 
-async function readEvent(reader: ReadableStreamDefaultReader<Uint8Array>) {
+async function readEventPayload(reader: ReadableStreamDefaultReader<Uint8Array>) {
   const value = await reader.read()
   if (value.done) throw new Error("event stream closed")
-  return Schema.decodeUnknownSync(Event)(JSON.parse(new TextDecoder().decode(value.value).replace(/^data: /, "")))
+  return JSON.parse(new TextDecoder().decode(value.value).replace(/^data: /, ""))
+}
+
+async function readEvent(reader: ReadableStreamDefaultReader<Uint8Array>) {
+  return Schema.decodeUnknownSync(Event)(await readEventPayload(reader))
 }
 
 async function readEventType(reader: ReadableStreamDefaultReader<Uint8Array>, type: string) {
   for (let index = 0; index < 20; index++) {
-    const event = await readEvent(reader)
-    if (event.type === type) return event
+    const payload = await readEventPayload(reader)
+    const envelope = Schema.decodeUnknownSync(EventEnvelope)(payload)
+    if (envelope.type === type) return Schema.decodeUnknownSync(Event)(payload)
   }
   throw new Error(`timed out waiting for ${type}`)
 }
