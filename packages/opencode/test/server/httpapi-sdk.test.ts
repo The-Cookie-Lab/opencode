@@ -748,12 +748,15 @@ describe("HttpApi SDK", () => {
           }),
         )
         const asyncPrompt = yield* capture(() =>
-          sdk.session.promptAsync({
-            sessionID,
-            agent: "build",
-            noReply: true,
-            parts: [{ type: "text", text: "async hello" }],
-          }),
+          sdk.session.promptAsync(
+            {
+              sessionID,
+              agent: "build",
+              noReply: true,
+              parts: [{ type: "text", text: "async hello" }],
+            },
+            { responseStyle: "fields" },
+          ),
         )
         const messages = yield* capture(() => sdk.session.messages({ sessionID }))
 

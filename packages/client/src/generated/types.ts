@@ -475,6 +475,17 @@ export type SessionsPromptOutput = {
         readonly name: string
         readonly source?: { readonly start: number; readonly end: number; readonly text: string }
       }>
+      readonly references?: ReadonlyArray<{
+        readonly name: string
+        readonly kind: "local" | "git" | "invalid"
+        readonly uri?: string
+        readonly repository?: string
+        readonly branch?: string
+        readonly target?: string
+        readonly targetUri?: string
+        readonly problem?: string
+        readonly source?: { readonly start: number; readonly end: number; readonly text: string }
+      }>
     }
     readonly delivery: "steer" | "queue"
     readonly timeCreated: number
@@ -746,6 +757,17 @@ export type SessionsHistoryOutput = {
               readonly name: string
               readonly source?: { readonly start: number; readonly end: number; readonly text: string }
             }>
+            readonly references?: ReadonlyArray<{
+              readonly name: string
+              readonly kind: "local" | "git" | "invalid"
+              readonly uri?: string
+              readonly repository?: string
+              readonly branch?: string
+              readonly target?: string
+              readonly targetUri?: string
+              readonly problem?: string
+              readonly source?: { readonly start: number; readonly end: number; readonly text: string }
+            }>
           }
           readonly delivery: "steer" | "queue"
         }
@@ -771,6 +793,17 @@ export type SessionsHistoryOutput = {
             }>
             readonly agents?: ReadonlyArray<{
               readonly name: string
+              readonly source?: { readonly start: number; readonly end: number; readonly text: string }
+            }>
+            readonly references?: ReadonlyArray<{
+              readonly name: string
+              readonly kind: "local" | "git" | "invalid"
+              readonly uri?: string
+              readonly repository?: string
+              readonly branch?: string
+              readonly target?: string
+              readonly targetUri?: string
+              readonly problem?: string
               readonly source?: { readonly start: number; readonly end: number; readonly text: string }
             }>
           }
@@ -1204,6 +1237,17 @@ export type SessionsEventsOutput =
             readonly name: string
             readonly source?: { readonly start: number; readonly end: number; readonly text: string }
           }>
+          readonly references?: ReadonlyArray<{
+            readonly name: string
+            readonly kind: "local" | "git" | "invalid"
+            readonly uri?: string
+            readonly repository?: string
+            readonly branch?: string
+            readonly target?: string
+            readonly targetUri?: string
+            readonly problem?: string
+            readonly source?: { readonly start: number; readonly end: number; readonly text: string }
+          }>
         }
         readonly delivery: "steer" | "queue"
       }
@@ -1229,6 +1273,17 @@ export type SessionsEventsOutput =
           }>
           readonly agents?: ReadonlyArray<{
             readonly name: string
+            readonly source?: { readonly start: number; readonly end: number; readonly text: string }
+          }>
+          readonly references?: ReadonlyArray<{
+            readonly name: string
+            readonly kind: "local" | "git" | "invalid"
+            readonly uri?: string
+            readonly repository?: string
+            readonly branch?: string
+            readonly target?: string
+            readonly targetUri?: string
+            readonly problem?: string
             readonly source?: { readonly start: number; readonly end: number; readonly text: string }
           }>
         }

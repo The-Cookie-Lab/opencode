@@ -63,42 +63,58 @@ afterEach(async () => {
 })
 
 describe("v2 pty HttpApi", () => {
-  testPty("serves location-wrapped PTY routes and retains exited sessions", async () => {
-    await using tmp = await tmpdir({ git: true, config: { formatter: false, lsp: false } })
+  ;(process.platform === "win32" ? effectIt.live.skip : effectIt.live)(
+    "serves location-wrapped PTY routes and retains exited sessions",
+    () =>
+      Effect.gen(function* () {
+        const dir = yield* tmpdirScoped({ git: true, config: { formatter: false, lsp: false } })
 
-    const empty = await request("/api/pty", tmp.path)
-    expect(empty.status).toBe(200)
-    expect(Schema.decodeUnknownSync(Location.response(Schema.Array(Pty.Info)))(await empty.json()).data).toEqual([])
+        const empty = yield* HttpClientRequest.get("/api/pty").pipe(directoryHeader(dir), HttpClient.execute)
+        expect(empty.status).toBe(200)
+        expect((yield* Schema.decodeUnknownEffect(Location.response(Schema.Array(Pty.Info)))(yield* empty.json)).data).toEqual(
+          [],
+        )
 
-    const created = await request("/api/pty", tmp.path, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ command: "/usr/bin/env", args: ["sh", "-c", "exit 4"], title: "v2" }),
-    })
-    expect(created.status).toBe(200)
-    const body = Schema.decodeUnknownSync(Location.response(Pty.Info))(await created.json())
-    expect(String(body.location.directory)).toBe(tmp.path)
-    expect(body.data.title).toBe("v2")
+        const created = yield* HttpClientRequest.post("/api/pty").pipe(
+          directoryHeader(dir),
+          HttpClientRequest.bodyJson({ command: process.execPath, args: ["-e", "process.exit(4)"], title: "v2" }),
+          Effect.flatMap(HttpClient.execute),
+        )
+        expect(created.status).toBe(200)
+        const body = yield* Schema.decodeUnknownEffect(Location.response(Pty.Info))(yield* created.json)
+        expect(String(body.location.directory)).toBe(dir)
+        expect(body.data.title).toBe("v2")
 
-    // The canonical surface keeps exited sessions observable with their exit code.
-    const deadline = Date.now() + 5_000
-    let info: { status: string; exitCode?: number } | undefined
-    while (Date.now() < deadline) {
-      const found = await request(`/api/pty/${body.data.id}`, tmp.path)
-      expect(found.status).toBe(200)
-      info = Schema.decodeUnknownSync(Location.response(Pty.Info))(await found.json()).data
-      if (info.status === "exited") break
-      await new Promise((resolve) => setTimeout(resolve, 50))
-    }
-    expect(info).toMatchObject({ status: "exited", exitCode: 4 })
+        // The canonical surface keeps exited sessions observable with their exit code.
+        const deadline = Date.now() + 10_000
+        let info: { status: string; exitCode?: number } | undefined
+        while (Date.now() < deadline) {
+          const found = yield* HttpClientRequest.get(`/api/pty/${body.data.id}`).pipe(
+            directoryHeader(dir),
+            HttpClient.execute,
+          )
+          expect(found.status).toBe(200)
+          info = (yield* Schema.decodeUnknownEffect(Location.response(Pty.Info))(yield* found.json)).data
+          if (info.status === "exited") break
+          yield* Effect.sleep("50 millis")
+        }
+        expect(info).toMatchObject({ status: "exited", exitCode: 4 })
 
-    const removed = await request(`/api/pty/${body.data.id}`, tmp.path, { method: "DELETE" })
-    expect(removed.status).toBe(204)
+        const removed = yield* HttpClientRequest.delete(`/api/pty/${body.data.id}`).pipe(
+          directoryHeader(dir),
+          HttpClient.execute,
+        )
+        expect(removed.status).toBe(204)
 
-    const missing = await request(`/api/pty/${body.data.id}`, tmp.path)
-    expect(missing.status).toBe(404)
-    expect(await missing.json()).toMatchObject({ _tag: "PtyNotFoundError", ptyID: body.data.id })
-  })
+        const missing = yield* HttpClientRequest.get(`/api/pty/${body.data.id}`).pipe(
+          directoryHeader(dir),
+          HttpClient.execute,
+        )
+        expect(missing.status).toBe(404)
+        expect(yield* missing.json).toMatchObject({ _tag: "PtyNotFoundError", ptyID: body.data.id })
+      }),
+    15_000,
+  )
 
   testPty("rejects connect tokens without the CSRF header and connects with a valid ticket", async () => {
     await using tmp = await tmpdir({ git: true, config: { formatter: false, lsp: false } })
