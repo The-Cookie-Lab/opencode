@@ -61,6 +61,11 @@ jobs:
         env:
           OPENCODE_EXPERIMENTAL_DISABLE_FILEWATCHER: ${{ runner.os == 'Windows' && 'true' || 'false' }}
 
+      - name: Check generated client
+        if: runner.os == 'Linux'
+        working-directory: packages/client
+        run: bun run check:generated
+
       - name: Run HttpApi exerciser gates
         working-directory: packages/opencode
         run: bun run test:httpapi

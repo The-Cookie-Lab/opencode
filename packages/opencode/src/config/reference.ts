@@ -1,6 +1,6 @@
 export * as ConfigReference from "./reference"
 
-import { ConfigReferenceV1 } from "@opencode-ai/core/v1/config/reference"
+import { ConfigReference } from "@opencode-ai/core/config/reference"
 
 export type NormalizedEntry =
   | {
@@ -26,7 +26,7 @@ export function validateAlias(name: string) {
   }
 }
 
-export function normalizeEntry(entry: ConfigReferenceV1.Entry): NormalizedEntry {
+export function normalizeEntry(entry: ConfigReference.Entry): NormalizedEntry {
   if (typeof entry === "string") {
     if (entry.startsWith(".") || entry.startsWith("/") || entry.startsWith("~")) {
       return { kind: "local", path: entry }
@@ -38,7 +38,7 @@ export function normalizeEntry(entry: ConfigReferenceV1.Entry): NormalizedEntry 
   return { kind: "git", repository: entry.repository, branch: entry.branch }
 }
 
-export function normalize(info: ConfigReferenceV1.Info): NormalizedInfo {
+export function normalize(info: ConfigReference.Info): NormalizedInfo {
   return Object.fromEntries(
     Object.entries(info).map(([name, entry]) => {
       const aliasError = validateAlias(name)

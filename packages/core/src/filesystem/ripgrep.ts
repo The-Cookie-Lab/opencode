@@ -1,9 +1,11 @@
 import path from "path"
+import { LayerNode } from "../effect/layer-node"
+import { httpClient } from "../effect/app-node-platform"
 import { serviceUse } from "../effect/service-use"
 import { FSUtil } from "../fs-util"
 import { Cause, Context, Effect, Fiber, Layer, Queue, Schema, Stream } from "effect"
 import type { PlatformError } from "effect/PlatformError"
-import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/unstable/http"
+import { HttpClient, HttpClientRequest } from "effect/unstable/http"
 import { ChildProcess } from "effect/unstable/process"
 import { ChildProcessSpawner } from "effect/unstable/process/ChildProcessSpawner"
 
@@ -483,10 +485,12 @@ export const layer: Layer.Layer<Service, never, FSUtil.Service | ChildProcessSpa
     }),
   )
 
-export const defaultLayer = layer.pipe(
-  Layer.provide(FetchHttpClient.layer),
-  Layer.provide(FSUtil.defaultLayer),
-  Layer.provide(CrossSpawnSpawner.defaultLayer),
-)
+export const node = LayerNode.make({
+  service: Service,
+  layer,
+  deps: [httpClient, FSUtil.node, CrossSpawnSpawner.node],
+})
+
+export const defaultLayer = LayerNode.compile(node)
 
 export * as Ripgrep from "./ripgrep"

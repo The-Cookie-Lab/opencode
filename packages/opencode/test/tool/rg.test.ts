@@ -1,10 +1,10 @@
 import { describe, expect } from "bun:test"
 import path from "path"
-import { Effect, Layer } from "effect"
+import { LayerNode } from "@opencode-ai/core/effect/layer-node"
+import { Effect } from "effect"
 import { RgTool } from "../../src/tool/rg"
 import { TestInstance } from "../fixture/fixture"
 import { SessionID, MessageID } from "../../src/session/schema"
-import { CrossSpawnSpawner } from "@opencode-ai/core/cross-spawn-spawner"
 import { Truncate } from "@/tool/truncate"
 import { Agent } from "../../src/agent/agent"
 import { Ripgrep } from "@opencode-ai/core/filesystem/ripgrep"
@@ -18,20 +18,9 @@ import { Git } from "@/git"
 import type * as Tool from "../../src/tool/tool"
 import { PermissionV1 } from "@opencode-ai/core/v1/permission"
 
-const referenceLayer = Reference.layer.pipe(
-  Layer.provide(Config.defaultLayer),
-  Layer.provide(RepositoryCache.defaultLayer),
-  Layer.provide(RuntimeFlags.layer({})),
-)
-
-const layer = Layer.mergeAll(
-  CrossSpawnSpawner.defaultLayer,
-  FSUtil.defaultLayer,
-  Ripgrep.defaultLayer,
-  Truncate.defaultLayer,
-  Agent.defaultLayer,
-  Git.defaultLayer,
-  referenceLayer,
+const layer = LayerNode.compile(
+  LayerNode.group([Agent.node, FSUtil.node, Git.node, RepositoryCache.node, Reference.node, Ripgrep.node, Truncate.node]),
+  [[RuntimeFlags.node, RuntimeFlags.layer({})]],
 )
 
 const it = testEffect(layer)

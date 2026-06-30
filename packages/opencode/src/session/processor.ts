@@ -1,3 +1,4 @@
+import { LayerNode } from "@opencode-ai/core/effect/layer-node"
 import { PermissionV1 } from "@opencode-ai/core/v1/permission"
 import { Image } from "@/image/image"
 import { SessionV1 } from "@opencode-ai/core/v1/session"
@@ -30,7 +31,7 @@ import { ModelV2 } from "@opencode-ai/core/model"
 import { ProviderV2 } from "@opencode-ai/core/provider"
 import * as DateTime from "effect/DateTime"
 import { RuntimeFlags } from "@/effect/runtime-flags"
-import { toolFileSourceFromUri, Usage, type LLMEvent } from "@opencode-ai/llm"
+import { Usage, type LLMEvent } from "@opencode-ai/llm"
 import { ToolOutput } from "@opencode-ai/core/tool-output"
 import type { ContextPlanner } from "./context-planner"
 import { LocalModelServerMemory } from "@/memory/local-model-server"
@@ -812,47 +813,25 @@ export const layer = Layer.effect(
                 ...(output.attachments?.map((item: SessionV1.FilePart) =>
                   ToolOutput.file({
                     type: "file",
-                    source: toolFileSourceFromUri(item.url),
+                    uri: item.url,
                     mime: item.mime,
                     name: item.filename,
                   }),
                 ) ?? []),
               ]
-              const unsupported = content.find((item) => item.type === "file" && item.source.type !== "data")
-              if (unsupported?.type === "file") {
-                const error = new Error(
-                  `Tool attachment source "${unsupported.source.type}" must be materialized before durable V2 settlement`,
-                )
-                yield* events.publish(SessionEvent.Tool.Failed, {
-                  sessionID: ctx.sessionID,
-                  assistantMessageID,
-                  callID: value.id,
-                  error: {
-                    type: "unknown",
-                    message: error.message,
-                  },
-                  provider: {
-                    executed: value.providerExecuted === true || toolCall?.part.metadata?.providerExecuted === true,
-                    ...(value.providerMetadata ? { metadata: value.providerMetadata } : {}),
-                  },
-                  timestamp: DateTime.makeUnsafe(Date.now()),
-                })
-                yield* failToolCall(value.id, error)
-                return
-              } else
-                yield* events.publish(SessionEvent.Tool.Success, {
-                  sessionID: ctx.sessionID,
-                  assistantMessageID,
-                  callID: value.id,
-                  structured: output.metadata,
-                  content,
-                  result: value.result,
-                  provider: {
-                    executed: value.providerExecuted === true || toolCall?.part.metadata?.providerExecuted === true,
-                    ...(value.providerMetadata ? { metadata: value.providerMetadata } : {}),
-                  },
-                  timestamp: DateTime.makeUnsafe(Date.now()),
-                })
+              yield* events.publish(SessionEvent.Tool.Success, {
+                sessionID: ctx.sessionID,
+                assistantMessageID,
+                callID: value.id,
+                structured: output.metadata,
+                content,
+                result: value.result,
+                provider: {
+                  executed: value.providerExecuted === true || toolCall?.part.metadata?.providerExecuted === true,
+                  ...(value.providerMetadata ? { metadata: value.providerMetadata } : {}),
+                },
+                timestamp: DateTime.makeUnsafe(Date.now()),
+              })
             }
             yield* recordToolSettled(toolCall?.part, value, "completed")
             if (value.name === "skill") {
@@ -974,6 +953,15 @@ export const layer = Layer.effect(
               }
             }
             ctx.assistantMessage.finish = value.reason
+            if (value.reason === "content-filter" && !ctx.assistantMessage.error) {
+              ctx.assistantMessage.error = new SessionV1.ContentFilterError({
+                message: "The response was blocked by the provider's content filter",
+              }).toObject()
+              yield* events.publish(Session.Event.Error, {
+                sessionID: ctx.assistantMessage.sessionID,
+                error: ctx.assistantMessage.error,
+              })
+            }
             ctx.assistantMessage.cost += usage.cost
             ctx.assistantMessage.tokens = usage.tokens
             yield* session.updatePart({
@@ -1358,23 +1346,29 @@ export const layer = Layer.effect(
 )
 
 export const defaultLayer = Layer.suspend(() =>
-  layer.pipe(
-    Layer.provide(Session.defaultLayer),
-    Layer.provide(Snapshot.defaultLayer),
-    Layer.provide(Agent.defaultLayer),
-    Layer.provide(LLM.defaultLayer),
-    Layer.provide(Permission.defaultLayer),
-    Layer.provide(Plugin.defaultLayer),
-    Layer.provide(SessionSummary.defaultLayer),
-    Layer.provide(SessionStatus.defaultLayer),
-    Layer.provide(Image.defaultLayer),
-    Layer.provide(Config.defaultLayer),
-    Layer.provide(RuntimeFlags.defaultLayer),
-    Layer.provide(Database.defaultLayer),
-    Layer.provide(EventV2Bridge.defaultLayer),
-    Layer.provide(LocalModelServerMemory.defaultLayer),
-    Layer.provide(BurnInTelemetry.defaultLayer),
-  ),
+  LayerNode.compile(node),
 )
+
+export const node = LayerNode.make({
+  service: Service,
+  layer,
+  deps: [
+    Session.node,
+    Config.node,
+    Snapshot.node,
+    Agent.node,
+    LLM.node,
+    Permission.node,
+    Plugin.node,
+    SessionSummary.node,
+    SessionStatus.node,
+    Image.node,
+    EventV2Bridge.node,
+    Database.node,
+    LocalModelServerMemory.node,
+    BurnInTelemetry.node,
+    RuntimeFlags.node,
+  ],
+})
 
 export * as SessionProcessor from "./processor"

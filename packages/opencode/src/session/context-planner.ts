@@ -1,6 +1,7 @@
 import { Agent } from "@/agent/agent"
 import { Config } from "@/config/config"
 import { RuntimeFlags } from "@/effect/runtime-flags"
+import { LayerNode } from "@opencode-ai/core/effect/layer-node"
 import type { Provider } from "@/provider/provider"
 import { Token } from "@/util/token"
 import { SessionV1 } from "@opencode-ai/core/v1/session"
@@ -114,9 +115,13 @@ export const layer = Layer.effect(
   }),
 )
 
-export const defaultLayer = Layer.suspend(() =>
-  layer.pipe(Layer.provide(Config.defaultLayer), Layer.provide(RuntimeFlags.defaultLayer)),
-)
+export const defaultLayer = Layer.suspend(() => LayerNode.compile(node))
+
+export const node = LayerNode.make({
+  service: Service,
+  layer,
+  deps: [Config.node, RuntimeFlags.node],
+})
 
 type LedgerCandidate = ContextLedgerItem & {
   order: number

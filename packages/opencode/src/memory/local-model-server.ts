@@ -1,4 +1,5 @@
 import { Provider } from "@/provider/provider"
+import { LayerNode } from "@opencode-ai/core/effect/layer-node"
 import { ProviderV2 } from "@opencode-ai/core/provider"
 import { Log } from "@opencode-ai/core/util/log"
 import { Context, Effect, Layer, Option } from "effect"
@@ -245,6 +246,12 @@ const read: Interface["read"] = (input) =>
   )
 
 export const layer = Layer.succeed(Service, Service.of({ captureMessage, captureMessageParts, commitSession, search, read }))
+
+export const node = LayerNode.make({
+  service: Service,
+  layer,
+  deps: [Provider.node],
+})
 
 export const defaultLayer = layer
 

@@ -3,7 +3,8 @@ export * as SessionStore from "./store"
 import { eq } from "drizzle-orm"
 import { Context, Effect, Layer, Schema } from "effect"
 import { Database } from "../database/database"
-import { SessionContext } from "./context"
+import { makeGlobalNode } from "../effect/app-node"
+import { SessionHistory } from "./history"
 import { MessageDecodeError } from "./error"
 import { SessionMessage } from "./message"
 import { SessionSchema } from "./schema"
@@ -24,7 +25,7 @@ export interface Interface {
 
 export class Service extends Context.Service<Service, Interface>()("@opencode/v2/SessionStore") {}
 
-export const layer = Layer.effect(
+const layer = Layer.effect(
   Service,
   Effect.gen(function* () {
     const { db } = yield* Database.Service
@@ -36,10 +37,10 @@ export const layer = Layer.effect(
         return row ? fromRow(row) : undefined
       }),
       context: Effect.fn("SessionStore.context")(function* (sessionID) {
-        return yield* SessionContext.load(db, sessionID)
+        return yield* SessionHistory.load(db, sessionID)
       }),
       runnerContext: Effect.fn("SessionStore.runnerContext")(function* (sessionID, baselineSeq) {
-        return yield* SessionContext.loadForRunner(db, sessionID, baselineSeq)
+        return yield* SessionHistory.loadForRunner(db, sessionID, baselineSeq)
       }),
       message: Effect.fn("SessionStore.message")(function* (messageID) {
         const row = yield* db
@@ -58,3 +59,5 @@ export const layer = Layer.effect(
     })
   }),
 )
+
+export const node = makeGlobalNode({ service: Service, layer, deps: [Database.node] })

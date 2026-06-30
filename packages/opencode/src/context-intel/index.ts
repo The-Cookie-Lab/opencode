@@ -1,6 +1,7 @@
 import path from "path"
 import { pathToFileURL } from "url"
 import { existsSync } from "fs"
+import { LayerNode } from "@opencode-ai/core/effect/layer-node"
 import { FSUtil } from "@opencode-ai/core/fs-util"
 import { CrossSpawnSpawner } from "@opencode-ai/core/cross-spawn-spawner"
 import { Git } from "@/git"
@@ -529,14 +530,13 @@ export const layer: Layer.Layer<
   }),
 )
 
-export const defaultLayer = layer.pipe(
-  Layer.provide(FSUtil.defaultLayer),
-  Layer.provide(Git.defaultLayer),
-  Layer.provide(LSP.defaultLayer),
-  Layer.provide(FetchHttpClient.layer),
-  Layer.provide(CrossSpawnSpawner.defaultLayer),
-  Layer.provide(Ripgrep.defaultLayer),
-)
+export const node = LayerNode.make({
+  service: Service,
+  layer,
+  deps: [FSUtil.node, Git.node, LSP.node, CrossSpawnSpawner.node, Ripgrep.node],
+})
+
+export const defaultLayer = LayerNode.compile(node)
 
 function packageManager(files: Set<string>) {
   if (files.has("bun.lock") || files.has("bun.lockb")) return "bun"

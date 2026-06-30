@@ -5,15 +5,15 @@ import { testRender } from "@opentui/solid"
 import { createSignal } from "solid-js"
 import type { JSX } from "solid-js"
 import type { AssistantMessage, Part, Provider, Session } from "@opencode-ai/sdk/v2"
-import { AssistantMetadataFooter } from "../../../src/cli/cmd/tui/routes/session/index"
-import { ContextSidebarView } from "../../../src/cli/cmd/tui/feature-plugins/sidebar/context"
+import { AssistantMetadataFooter } from "../../../../tui/src/routes/session/index"
+import { ContextSidebarView } from "../../../../tui/src/feature-plugins/sidebar/context"
 import {
   assistantContextDetailSegments,
   contextTokenDetails,
   type EnrichedStepFinishPart,
   latestStepFinish,
   sidebarContextDetailRows,
-} from "../../../src/cli/cmd/tui/util/context-details"
+} from "../../../../tui/src/util/context-details"
 import { createTuiPluginApi } from "../../fixture/tui-plugin"
 
 let testSetup: Awaited<ReturnType<typeof testRender>> | undefined

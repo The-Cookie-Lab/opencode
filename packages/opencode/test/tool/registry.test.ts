@@ -3,44 +3,23 @@ import path from "path"
 import fs from "fs/promises"
 import { fileURLToPath, pathToFileURL } from "url"
 import { Effect, Layer, Result, Schema } from "effect"
-import { CrossSpawnSpawner } from "@opencode-ai/core/cross-spawn-spawner"
-import { Database } from "@opencode-ai/core/database/database"
+import { LayerNode } from "@opencode-ai/core/effect/layer-node"
 import { ToolRegistry } from "@/tool/registry"
 import { Tool } from "@/tool/tool"
 import { disposeAllInstances, TestInstance } from "../fixture/fixture"
 import { testEffect } from "../lib/effect"
 import { TestConfig } from "../fixture/config"
-import { FSUtil } from "@opencode-ai/core/fs-util"
+import { Config } from "@/config/config"
 import { Plugin } from "@/plugin"
-import { Question } from "@/question"
-import { Todo } from "@/session/todo"
-import { Skill } from "@/skill"
 import { Agent } from "@/agent/agent"
-import { BackgroundJob } from "@/background/job"
-import { Session } from "@/session/session"
-import { SessionStatus } from "@/session/status"
-import { Provider } from "@/provider/provider"
-import { Git } from "@/git"
-import { LSP } from "@/lsp/lsp"
-import { Instruction } from "@/session/instruction"
-import { EventV2Bridge } from "@/event-v2-bridge"
-import { FetchHttpClient } from "effect/unstable/http"
-import { Format } from "@/format"
-import { Ripgrep } from "@opencode-ai/core/filesystem/ripgrep"
-import * as Truncate from "@/tool/truncate"
 import { InstanceState } from "@/effect/instance-state"
-import { Reference } from "@/reference/reference"
-import { RepositoryCache } from "@/reference/repository-cache"
 
 import { ToolJsonSchema } from "@/tool/json-schema"
 import { MessageID, SessionID } from "@/session/schema"
 import { RuntimeFlags } from "@/effect/runtime-flags"
 import { ProviderV2 } from "@opencode-ai/core/provider"
-import { ContextIntel } from "@/context-intel"
 import { ModelV2 } from "@opencode-ai/core/model"
-import { LocalModelServerMemory } from "@/memory/local-model-server"
 
-const node = CrossSpawnSpawner.defaultLayer
 const configLayer = TestConfig.layer({
   directories: () => InstanceState.directory.pipe(Effect.map((dir) => [path.join(dir, ".opencode")])),
 })
@@ -49,36 +28,6 @@ type RegistryLayerOptions = {
   flags?: Partial<RuntimeFlags.Info>
   plugin?: Layer.Layer<Plugin.Service>
 }
-
-const registryLayer = (opts: RegistryLayerOptions = {}) =>
-  ToolRegistry.layer
-    .pipe(
-      Layer.provide(ContextIntel.layer),
-      Layer.provide(LocalModelServerMemory.defaultLayer),
-      Layer.provide(configLayer),
-      Layer.provide(opts.plugin ?? Plugin.defaultLayer),
-      Layer.provide(Question.defaultLayer),
-      Layer.provide(Todo.defaultLayer),
-      Layer.provide(Skill.defaultLayer),
-      Layer.provide(Agent.defaultLayer),
-      Layer.provide(Session.defaultLayer),
-      Layer.provide(Layer.mergeAll(SessionStatus.defaultLayer, BackgroundJob.defaultLayer)),
-      Layer.provide(Provider.defaultLayer),
-      Layer.provide(Layer.mergeAll(Git.defaultLayer, RepositoryCache.defaultLayer)),
-      Layer.provide(Reference.defaultLayer),
-      Layer.provide(LSP.defaultLayer),
-      Layer.provide(Instruction.defaultLayer),
-      Layer.provide(FSUtil.defaultLayer),
-      Layer.provide(EventV2Bridge.defaultLayer),
-      Layer.provide(FetchHttpClient.layer),
-      Layer.provide(Format.defaultLayer),
-    )
-    .pipe(
-      Layer.provide(Layer.mergeAll(node, Database.defaultLayer)),
-      Layer.provide(Ripgrep.defaultLayer),
-      Layer.provide(Truncate.defaultLayer),
-      Layer.provide(RuntimeFlags.layer(opts.flags ?? {})),
-    )
 
 // Fake Plugin.Service that returns a single plugin whose `tool` map contains
 // one definition with `args: undefined`. Used to exercise the plugin entry
@@ -104,22 +53,31 @@ const brokenPluginLayer = Layer.succeed(
   }),
 )
 
-const it = testEffect(Layer.mergeAll(registryLayer(), node, Agent.defaultLayer))
-const scout = testEffect(
-  Layer.mergeAll(registryLayer({ flags: { experimentalScout: true } }), node, Agent.defaultLayer),
+const emptyPluginLayer = Layer.succeed(
+  Plugin.Service,
+  Plugin.Service.of({
+    init: () => Effect.void,
+    trigger: ((_name: unknown, _input: unknown, output: unknown) =>
+      Effect.succeed(output)) as Plugin.Interface["trigger"],
+    list: () => Effect.succeed([]),
+  }),
 )
-const macro = testEffect(
-  Layer.mergeAll(registryLayer({ flags: { experimentalMacroTools: true } }), node, Agent.defaultLayer),
-)
-const contextTools = testEffect(
-  Layer.mergeAll(registryLayer({ flags: { experimentalContextTools: true } }), node, Agent.defaultLayer),
-)
-const semantic = testEffect(
-  Layer.mergeAll(registryLayer({ flags: { experimentalSemanticSearch: true } }), node, Agent.defaultLayer),
-)
-const withBrokenPlugin = testEffect(
-  Layer.mergeAll(registryLayer({ plugin: brokenPluginLayer }), node, Agent.defaultLayer),
-)
+
+const root = LayerNode.group([ToolRegistry.node, Agent.node])
+const replacements = (opts: RegistryLayerOptions = {}) =>
+  [
+    [Config.node, configLayer],
+    [RuntimeFlags.node, RuntimeFlags.layer(opts.flags ?? {})],
+    [Plugin.node, opts.plugin ?? emptyPluginLayer],
+  ] as const
+
+const registryTest = (opts: RegistryLayerOptions = {}) => testEffect(LayerNode.compile(root, replacements(opts)))
+const it = registryTest()
+const scout = registryTest({ flags: { experimentalScout: true } })
+const macro = registryTest({ flags: { experimentalMacroTools: true } })
+const contextTools = registryTest({ flags: { experimentalContextTools: true } })
+const semantic = registryTest({ flags: { experimentalSemanticSearch: true } })
+const withBrokenPlugin = registryTest({ plugin: brokenPluginLayer })
 
 afterEach(async () => {
   await disposeAllInstances()

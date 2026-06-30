@@ -1,12 +1,15 @@
 import { afterEach, describe, expect } from "bun:test"
 import { SessionV1 } from "@opencode-ai/core/v1/session"
 import { Database } from "@opencode-ai/core/database/database"
+import { LayerNode } from "@opencode-ai/core/effect/layer-node"
+import { SessionProjector } from "@opencode-ai/core/session/projector"
 import { Deferred, Effect, Exit, Fiber, Layer } from "effect"
 import { Agent } from "../../src/agent/agent"
 import { BackgroundJob } from "@/background/job"
 import { EventV2Bridge } from "@/event-v2-bridge"
 import { Config } from "@/config/config"
 import { CrossSpawnSpawner } from "@opencode-ai/core/cross-spawn-spawner"
+import { Ripgrep } from "@opencode-ai/core/ripgrep"
 import { Session } from "@/session/session"
 import type { SessionPrompt } from "../../src/session/prompt"
 import { MessageID, PartID, SessionID } from "../../src/session/schema"
@@ -32,23 +35,30 @@ const ref = {
 }
 
 const layer = (flags: Partial<RuntimeFlags.Info> = {}) =>
-  Layer.mergeAll(
-    Agent.defaultLayer,
-    BackgroundJob.defaultLayer,
-    EventV2Bridge.defaultLayer,
-    Config.defaultLayer,
-    CrossSpawnSpawner.defaultLayer,
-    Session.defaultLayer,
-    SessionRunState.defaultLayer,
-    SessionStatus.defaultLayer,
-    Truncate.defaultLayer,
-    ToolRegistry.defaultLayer,
-    Database.defaultLayer,
-    RuntimeFlags.layer(flags),
+  LayerNode.compile(
+    LayerNode.group([
+      Agent.node,
+      BackgroundJob.node,
+      EventV2Bridge.node,
+      Config.node,
+      CrossSpawnSpawner.node,
+      Session.node,
+      SessionProjector.node,
+      SessionRunState.node,
+      SessionStatus.node,
+      Truncate.node,
+      ToolRegistry.node,
+      Database.node,
+      RuntimeFlags.node,
+      Ripgrep.node,
+    ]),
+    [[RuntimeFlags.node, RuntimeFlags.layer(flags)]],
   )
 
 const it = testEffect(layer())
 const background = testEffect(layer({ experimentalBackgroundSubagents: true }))
+const withBackgroundFlags = <A, E, R>(self: Effect.Effect<A, E, R>) =>
+  self.pipe(Effect.provide(RuntimeFlags.layer({ experimentalBackgroundSubagents: true })))
 
 function defer<T>() {
   let resolve!: (value: T | PromiseLike<T>) => void
@@ -421,19 +431,15 @@ describe("tool.task", () => {
           {
             permission: "bash",
             pattern: "*",
-            action: "allow",
+            action: "deny",
           },
           {
             permission: "read",
             pattern: "*",
-            action: "allow",
+            action: "deny",
           },
         ])
-        expect(seen?.tools).toEqual({
-          todowrite: false,
-          bash: false,
-          read: false,
-        })
+        expect(seen?.tools).toBeUndefined()
       }),
     {
       config: {
@@ -550,7 +556,7 @@ describe("tool.task", () => {
   )
 
   background.instance("execute launches background tasks without waiting for completion", () =>
-    Effect.gen(function* () {
+    withBackgroundFlags(Effect.gen(function* () {
       const jobs = yield* BackgroundJob.Service
       const { chat, assistant } = yield* seed()
       const tool = yield* TaskTool
@@ -584,11 +590,11 @@ describe("tool.task", () => {
       expect(result.metadata.background).toBe(true)
       expect(result.output).toContain(`state="running"`)
       expect(job?.status).toBe("running")
-    }),
+    })),
   )
 
   background.instance("background task completion waits for running updates", () =>
-    Effect.gen(function* () {
+    withBackgroundFlags(Effect.gen(function* () {
       const jobs = yield* BackgroundJob.Service
       const { chat, assistant } = yield* seed()
       const tool = yield* TaskTool
@@ -658,11 +664,11 @@ describe("tool.task", () => {
       expect(notification.variant).toBe("xhigh")
       expect(notification.parts[0]?.type).toBe("text")
       if (notification.parts[0]?.type === "text") expect(notification.parts[0].text).toContain("second done")
-    }),
+    })),
   )
 
   background.instance("background tasks complete through the background job service", () =>
-    Effect.gen(function* () {
+    withBackgroundFlags(Effect.gen(function* () {
       const jobs = yield* BackgroundJob.Service
       const { chat, assistant } = yield* seed()
       const tool = yield* TaskTool
@@ -691,11 +697,11 @@ describe("tool.task", () => {
       expect(waited.timedOut).toBe(false)
       expect(waited.info?.status).toBe("completed")
       expect(waited.info?.output).toBe("background done")
-    }),
+    })),
   )
 
   background.instance("background task completion does not wait for the parent async prompt", () =>
-    Effect.gen(function* () {
+    withBackgroundFlags(Effect.gen(function* () {
       const jobs = yield* BackgroundJob.Service
       const { chat, assistant } = yield* seed()
       const tool = yield* TaskTool
@@ -729,11 +735,11 @@ describe("tool.task", () => {
       const waited = yield* jobs.wait({ id: result.metadata.sessionId, timeout: 1_000 })
       expect(waited.timedOut).toBe(false)
       expect(waited.info?.status).toBe("completed")
-    }),
+    })),
   )
 
   background.instance("removing the parent session cancels running background tasks", () =>
-    Effect.gen(function* () {
+    withBackgroundFlags(Effect.gen(function* () {
       const jobs = yield* BackgroundJob.Service
       const sessions = yield* Session.Service
       const { chat, assistant } = yield* seed()
@@ -768,11 +774,11 @@ describe("tool.task", () => {
       const waited = yield* jobs.wait({ id: result.metadata.sessionId, timeout: 1_000 })
       expect(waited.timedOut).toBe(false)
       expect(waited.info?.status).toBe("cancelled")
-    }),
+    })),
   )
 
   background.instance("removing the child task session cancels its running background task", () =>
-    Effect.gen(function* () {
+    withBackgroundFlags(Effect.gen(function* () {
       const jobs = yield* BackgroundJob.Service
       const sessions = yield* Session.Service
       const { chat, assistant } = yield* seed()
@@ -807,11 +813,11 @@ describe("tool.task", () => {
       const waited = yield* jobs.wait({ id: result.metadata.sessionId, timeout: 1_000 })
       expect(waited.timedOut).toBe(false)
       expect(waited.info?.status).toBe("cancelled")
-    }),
+    })),
   )
 
   background.instance("cancelling the parent run cancels running background tasks", () =>
-    Effect.gen(function* () {
+    withBackgroundFlags(Effect.gen(function* () {
       const jobs = yield* BackgroundJob.Service
       const runState = yield* SessionRunState.Service
       const { chat, assistant } = yield* seed()
@@ -846,7 +852,7 @@ describe("tool.task", () => {
       const waited = yield* jobs.wait({ id: result.metadata.sessionId, timeout: 1_000 })
       expect(waited.timedOut).toBe(false)
       expect(waited.info?.status).toBe("cancelled")
-    }),
+    })),
   )
 
   it.instance("cancelling a child run cancels its own pre-runner task job", () =>

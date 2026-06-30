@@ -1,3 +1,4 @@
+import { LayerNode } from "@opencode-ai/core/effect/layer-node"
 import { PermissionV1 } from "@opencode-ai/core/v1/permission"
 import path from "path"
 import { SessionV1 } from "@opencode-ai/core/v1/session"
@@ -16,7 +17,7 @@ import { SessionCompaction } from "./compaction"
 import { SystemPrompt } from "./system"
 import { Instruction } from "./instruction"
 import { Plugin } from "../plugin"
-import MAX_STEPS from "../session/prompt/max-steps.txt"
+import { MAX_STEPS_PROMPT } from "@opencode-ai/core/session/runner/max-steps"
 import { ToolRegistry } from "@/tool/registry"
 import { MCP } from "../mcp"
 import { LSP } from "@/lsp/lsp"
@@ -35,7 +36,7 @@ import { Tool } from "@/tool/tool"
 import { Permission } from "@/permission"
 import { SessionStatus } from "./status"
 import { LLM } from "./llm"
-import { Shell } from "@/shell/shell"
+import { Shell } from "@opencode-ai/core/shell"
 import { ShellID } from "@/tool/shell/id"
 import { FSUtil } from "@opencode-ai/core/fs-util"
 import { Truncate } from "@/tool/truncate"
@@ -54,7 +55,7 @@ import { SessionEvent } from "@opencode-ai/core/session/event"
 import { SessionMessage } from "@opencode-ai/core/session/message"
 import { ModelV2 } from "@opencode-ai/core/model"
 import { ProviderV2 } from "@opencode-ai/core/provider"
-import { AgentAttachment, FileAttachment, Prompt, ReferenceAttachment, Source } from "@opencode-ai/core/session/prompt"
+import { AgentAttachment, FileAttachment, Prompt, ReferenceAttachment } from "@opencode-ai/core/session/prompt"
 import { Reference } from "@/reference/reference"
 import * as DateTime from "effect/DateTime"
 import { eq } from "drizzle-orm"
@@ -748,7 +749,26 @@ export const layer = Layer.effect(
         format: input.format,
       }
 
-      if (current?.agent !== info.agent) {
+      const agentChanged = current?.agent !== info.agent
+      const modelChanged =
+        current?.model?.providerID !== info.model.providerID ||
+        current.model?.id !== info.model.modelID ||
+        (current.model?.variant === "default" ? undefined : current.model?.variant) !== info.model.variant
+
+      if (agentChanged || modelChanged) {
+        yield* sessions.setAgentModel({
+          sessionID: input.sessionID,
+          agent: info.agent,
+          model: {
+            id: info.model.modelID,
+            providerID: info.model.providerID,
+            variant: info.model.variant ?? "default",
+          },
+          time: info.time.created,
+        })
+      }
+
+      if (flags.experimentalEventSystem && agentChanged) {
         yield* events.publish(SessionEvent.AgentSwitched, {
           sessionID: input.sessionID,
           messageID: SessionMessage.ID.create(),
@@ -756,11 +776,7 @@ export const layer = Layer.effect(
           agent: info.agent,
         })
       }
-      if (
-        current?.model?.providerID !== info.model.providerID ||
-        current.model.id !== info.model.modelID ||
-        (current.model.variant === "default" ? undefined : current.model.variant) !== info.model.variant
-      ) {
+      if (flags.experimentalEventSystem && modelChanged) {
         yield* events.publish(SessionEvent.ModelSwitched, {
           sessionID: input.sessionID,
           messageID: SessionMessage.ID.create(),
@@ -1154,7 +1170,7 @@ export const layer = Layer.effect(
             const reference = referencePromptMetadata(part.metadata?.reference)
             if (reference) {
               result.references.push(
-                new ReferenceAttachment({
+                {
                   name: reference.name,
                   kind: reference.kind,
                   uri: reference.path ? pathToFileURL(reference.path).href : undefined,
@@ -1163,43 +1179,43 @@ export const layer = Layer.effect(
                   target: reference.target,
                   targetUri: reference.targetPath ? pathToFileURL(reference.targetPath).href : undefined,
                   problem: reference.problem,
-                  source: new Source({
+                  source: {
                     start: reference.source.start,
                     end: reference.source.end,
                     text: reference.source.value,
-                  }),
-                }),
+                  },
+                },
               )
             }
           }
           if (part.type === "file") {
             result.files.push(
-              new FileAttachment({
+              {
                 uri: part.url,
                 mime: part.mime,
                 name: part.filename,
                 source: part.source
-                  ? new Source({
+                  ? {
                       start: part.source.text.start,
                       end: part.source.text.end,
                       text: part.source.text.value,
-                    })
+                    }
                   : undefined,
-              }),
+              },
             )
           }
           if (part.type === "agent") {
             result.agents.push(
-              new AgentAttachment({
+              {
                 name: part.name,
                 source: part.source
-                  ? new Source({
+                  ? {
                       start: part.source.start,
                       end: part.source.end,
                       text: part.source.value,
-                    })
+                    }
                   : undefined,
-              }),
+              },
             )
           }
           return result
@@ -1219,7 +1235,7 @@ export const layer = Layer.effect(
           messageID: SessionMessage.ID.create(),
           timestamp: DateTime.makeUnsafe(info.time.created),
           delivery: "steer",
-          prompt: new Prompt({
+          prompt: Prompt.fromUserMessage({
             text: nextPrompt.text.join("\n"),
             files: nextPrompt.files,
             agents: nextPrompt.agents,
@@ -1476,15 +1492,21 @@ export const layer = Layer.effect(
 
             yield* plugin.trigger("experimental.chat.messages.transform", {}, { messages: msgs })
 
-            const [skills, env, instructions, modelMsgs] = yield* Effect.all([
+            const [skills, env, instructions, mcpInstructions, modelMsgs] = yield* Effect.all([
               sys.skills(agent),
               sys.environment(model),
               instruction
                 .system({ prompt: lastUserMsg ? instructionPrompt(lastUserMsg.parts) : undefined })
                 .pipe(Effect.orDie),
+              sys.mcp(agent, session.permission),
               MessageV2.toModelMessagesEffect(msgs, model),
             ])
-            const system = [...env, ...instructions, ...(skills ? [skills] : [])]
+            const system = [
+              ...env,
+              ...instructions,
+              ...(mcpInstructions ? [mcpInstructions] : []),
+              ...(skills ? [skills] : []),
+            ]
             const format = lastUser.format ?? { type: "text" as const }
             if (format.type === "json_schema") system.push(STRUCTURED_OUTPUT_SYSTEM_PROMPT)
             const result = yield* handle.process({
@@ -1494,7 +1516,10 @@ export const layer = Layer.effect(
               sessionID,
               parentSessionID: session.parentID,
               system,
-              messages: [...modelMsgs, ...(isLastStep ? [{ role: "assistant" as const, content: MAX_STEPS }] : [])],
+              messages: [
+                ...modelMsgs,
+                ...(isLastStep ? [{ role: "assistant" as const, content: MAX_STEPS_PROMPT }] : []),
+              ],
               tools,
               model,
               toolChoice: format.type === "json_schema" ? "required" : undefined,
@@ -1685,46 +1710,46 @@ export const layer = Layer.effect(
 )
 
 export const defaultLayer = Layer.suspend(() =>
-  layer
-    .pipe(
-      Layer.provide(SessionRunState.defaultLayer),
-      Layer.provide(SessionStatus.defaultLayer),
-      Layer.provide(SessionCompaction.defaultLayer),
-      Layer.provide(SessionProcessor.defaultLayer),
-      Layer.provide(ContextPlanner.defaultLayer),
-      Layer.provide(Command.defaultLayer),
-      Layer.provide(Permission.defaultLayer),
-      Layer.provide(MCP.defaultLayer),
-      Layer.provide(LSP.defaultLayer),
-      Layer.provide(ToolRegistry.defaultLayer),
-      Layer.provide(Truncate.defaultLayer),
-      Layer.provide(Provider.defaultLayer),
-      Layer.provide(Config.defaultLayer),
-      Layer.provide(Instruction.defaultLayer),
-      Layer.provide(FSUtil.defaultLayer),
-      Layer.provide(Plugin.defaultLayer),
-      Layer.provide(Session.defaultLayer),
-      Layer.provide(SessionRevert.defaultLayer),
-      Layer.provide(SessionSummary.defaultLayer),
-      Layer.provide(Image.defaultLayer),
-    )
-    .pipe(Layer.provide(LocalModelServerMemory.defaultLayer))
-    .pipe(Layer.provide(BurnInTelemetry.defaultLayer))
-    .pipe(
-      Layer.provide(
-        Layer.mergeAll(
-          Agent.defaultLayer,
-          Database.defaultLayer,
-          SystemPrompt.defaultLayer,
-          LLM.defaultLayer,
-          Reference.defaultLayer,
-          CrossSpawnSpawner.defaultLayer,
-          RuntimeFlags.defaultLayer,
-          EventV2Bridge.defaultLayer,
-        ),
-      ),
-    ),
+  LayerNode.compile(node),
 )
+
+export const node = LayerNode.make({
+  service: Service,
+  layer,
+  deps: [
+    SessionStatus.node,
+    Session.node,
+    Agent.node,
+    Provider.node,
+    SessionProcessor.node,
+    ContextPlanner.node,
+    SessionCompaction.node,
+    Plugin.node,
+    Command.node,
+    Config.node,
+    Permission.node,
+    FSUtil.node,
+    MCP.node,
+    LSP.node,
+    ToolRegistry.node,
+    Truncate.node,
+    Image.node,
+    CrossSpawnSpawner.node,
+    Instruction.node,
+    SessionRunState.node,
+    SessionRevert.node,
+    SessionSummary.node,
+    SystemPrompt.node,
+    LLM.node,
+    Reference.node,
+    EventV2Bridge.node,
+    RuntimeFlags.node,
+    Database.node,
+    LocalModelServerMemory.node,
+    BurnInTelemetry.node,
+  ],
+})
+
 const ModelRef = Schema.Struct({
   providerID: ProviderV2.ID,
   modelID: ModelV2.ID,

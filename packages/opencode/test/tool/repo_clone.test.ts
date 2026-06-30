@@ -1,10 +1,11 @@
 import { afterEach, describe, expect } from "bun:test"
 import path from "path"
 import { pathToFileURL } from "node:url"
-import { Cause, Effect, Exit, Layer } from "effect"
+import { CrossSpawnSpawner } from "@opencode-ai/core/cross-spawn-spawner"
+import { LayerNode } from "@opencode-ai/core/effect/layer-node"
+import { Cause, Effect, Exit } from "effect"
 import { FSUtil } from "@opencode-ai/core/fs-util"
 import { Agent } from "../../src/agent/agent"
-import { CrossSpawnSpawner } from "@opencode-ai/core/cross-spawn-spawner"
 import { Git } from "../../src/git"
 import { Global } from "@opencode-ai/core/global"
 import { MessageID, SessionID } from "../../src/session/schema"
@@ -30,13 +31,8 @@ const ctx = {
 }
 
 const it = testEffect(
-  Layer.mergeAll(
-    Agent.defaultLayer,
-    FSUtil.defaultLayer,
-    CrossSpawnSpawner.defaultLayer,
-    Git.defaultLayer,
-    RepositoryCache.defaultLayer,
-    Truncate.defaultLayer,
+  LayerNode.compile(
+    LayerNode.group([Agent.node, CrossSpawnSpawner.node, FSUtil.node, Git.node, RepositoryCache.node, Truncate.node]),
   ),
 )
 

@@ -1,4 +1,5 @@
 import { RuntimeFlags } from "@/effect/runtime-flags"
+import { LayerNode } from "@opencode-ai/core/effect/layer-node"
 import { Global } from "@opencode-ai/core/global"
 import { Log } from "@opencode-ai/core/util/log"
 import { createHash } from "crypto"
@@ -254,7 +255,13 @@ export const layer = Layer.effect(
   }),
 )
 
-export const defaultLayer = layer.pipe(Layer.provide(RuntimeFlags.defaultLayer))
+export const node = LayerNode.make({
+  service: Service,
+  layer,
+  deps: [RuntimeFlags.node],
+})
+
+export const defaultLayer = Layer.suspend(() => LayerNode.compile(node))
 
 function compactEntity(entity: Entity | undefined) {
   if (!entity) return undefined

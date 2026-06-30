@@ -1,4 +1,5 @@
 import path from "path"
+import { LayerNode } from "@opencode-ai/core/effect/layer-node"
 import { Context, Effect, Layer, Schema } from "effect"
 import { FSUtil } from "@opencode-ai/core/fs-util"
 import { Flock } from "@opencode-ai/core/util/flock"
@@ -312,9 +313,12 @@ export const layer: Layer.Layer<Service, never, FSUtil.Service | Git.Service> = 
   }),
 )
 
-export const defaultLayer: Layer.Layer<Service> = layer.pipe(
-  Layer.provide(FSUtil.defaultLayer),
-  Layer.provide(Git.defaultLayer),
-)
+export const node = LayerNode.make({
+  service: Service,
+  layer,
+  deps: [FSUtil.node, Git.node],
+})
+
+export const defaultLayer: Layer.Layer<Service> = Layer.suspend(() => LayerNode.compile(node))
 
 export * as RepositoryCache from "./repository-cache"

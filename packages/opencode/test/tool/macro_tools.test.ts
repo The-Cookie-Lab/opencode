@@ -1,18 +1,16 @@
 import { afterEach, describe, expect } from "bun:test"
 import path from "path"
-import { Effect, Layer } from "effect"
 import { CrossSpawnSpawner } from "@opencode-ai/core/cross-spawn-spawner"
+import { LayerNode } from "@opencode-ai/core/effect/layer-node"
+import { Effect, Layer } from "effect"
 import { FSUtil } from "@opencode-ai/core/fs-util"
 import { Agent } from "@/agent/agent"
 import { ContextIntel } from "@/context-intel"
-import { FetchHttpClient } from "effect/unstable/http"
-import { Git } from "@/git"
 import { LSP } from "@/lsp/lsp"
 import { LocalModelServerMemory } from "@/memory/local-model-server"
 import { MessageID, SessionID } from "@/session/schema"
 import { PermissionV1 } from "@opencode-ai/core/v1/permission"
 import { ProjectDossierTool } from "@/tool/project_dossier"
-import { Ripgrep } from "@opencode-ai/core/filesystem/ripgrep"
 import { SemanticSearchTool } from "@/tool/semantic_search"
 import { Tool } from "@/tool/tool"
 import { Truncate } from "@/tool/truncate"
@@ -45,15 +43,6 @@ const lsp = Layer.succeed(
   }),
 )
 
-const contextIntelLayer = ContextIntel.layer.pipe(
-  Layer.provide(FSUtil.defaultLayer),
-  Layer.provide(CrossSpawnSpawner.defaultLayer),
-  Layer.provide(FetchHttpClient.layer),
-  Layer.provide(Git.defaultLayer),
-  Layer.provide(lsp),
-  Layer.provide(Ripgrep.defaultLayer),
-)
-
 const memory = Layer.succeed(
   LocalModelServerMemory.Service,
   LocalModelServerMemory.Service.of({
@@ -73,15 +62,9 @@ const memory = Layer.succeed(
 )
 
 const layer = Layer.mergeAll(
-  Agent.defaultLayer,
-  FSUtil.defaultLayer,
-  CrossSpawnSpawner.defaultLayer,
-  FetchHttpClient.layer,
-  Git.defaultLayer,
-  lsp,
-  Ripgrep.defaultLayer,
-  Truncate.defaultLayer,
-  contextIntelLayer,
+  LayerNode.compile(LayerNode.group([Agent.node, CrossSpawnSpawner.node, FSUtil.node, Truncate.node, ContextIntel.node]), [
+    [LSP.node, lsp],
+  ]),
   memory,
 )
 
