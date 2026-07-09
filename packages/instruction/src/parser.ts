@@ -154,5 +154,3 @@ export function parse(sources: Source[]): Parsed {
 
   return { entries }
 }
-
-export * as InstructionParser from "./instruction-parser"

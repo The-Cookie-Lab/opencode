@@ -5,10 +5,12 @@ import { Effect, FileSystem, Layer } from "effect"
 import { CrossSpawnSpawner } from "@opencode-ai/core/cross-spawn-spawner"
 
 import { Instruction } from "../../src/session/instruction"
-import { InstructionParser } from "../../src/session/instruction-parser"
-import { InstructionReconciler } from "../../src/session/instruction-reconciler"
-import { InstructionRenderer } from "../../src/session/instruction-renderer"
-import { InstructionRouter } from "../../src/session/instruction-router"
+import {
+  InstructionParser,
+  InstructionReconciler,
+  InstructionRenderer,
+  InstructionRouter,
+} from "@cookielab/instruction"
 import type { MessageV2 } from "../../src/session/message-v2"
 import { MessageID, PartID, SessionID } from "../../src/session/schema"
 import { Global } from "@opencode-ai/core/global"

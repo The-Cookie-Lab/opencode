@@ -1,4 +1,4 @@
-import type { Entry, InstructionDomain } from "./instruction-parser"
+import type { Entry, InstructionDomain } from "./parser"
 
 export interface Routed {
   readonly selected: Entry[]
@@ -60,5 +60,3 @@ export function countDomains(entries: Entry[]) {
   }
   return counts
 }
-
-export * as InstructionRouter from "./instruction-router"

@@ -1,4 +1,4 @@
-import type { Entry } from "./instruction-parser"
+import type { Entry } from "./parser"
 
 export interface Result {
   readonly entries: Entry[]
@@ -36,5 +36,3 @@ export function reconcile(entries: Entry[]): Result {
     replacementSuppressions,
   }
 }
-
-export * as InstructionReconciler from "./instruction-reconciler"

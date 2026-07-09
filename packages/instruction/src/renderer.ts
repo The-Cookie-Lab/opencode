@@ -1,7 +1,7 @@
-import { createHash } from "crypto"
-import { InstructionParser, type Source } from "./instruction-parser"
-import { InstructionReconciler } from "./instruction-reconciler"
-import { InstructionRouter } from "./instruction-router"
+import { createHash } from "node:crypto"
+import { parse, type Entry, type Source } from "./parser"
+import { reconcile } from "./reconciler"
+import { countDomains, route } from "./router"
 
 export type Mode = "raw" | "curated"
 
@@ -45,7 +45,7 @@ function rawBlocks(sources: Source[]) {
   )
 }
 
-function compactEntry(entry: InstructionParser.Entry) {
+function compactEntry(entry: Entry) {
   const source = `source=${entry.filepath}${entry.heading ? ` heading=${JSON.stringify(entry.heading)}` : ""}`
   if (entry.id) return `- [${entry.id}] ${entry.text.replace(/\s+/g, " ")} (${source})`
   return [`From ${entry.filepath}${entry.heading ? ` (${entry.heading})` : ""}:`, entry.text].join("\n")
@@ -58,16 +58,16 @@ function telemetryBlock(telemetry: Telemetry) {
 export function render(sources: Source[], options: RenderOptions): Rendered {
   if (options.mode === "raw") return { blocks: rawBlocks(sources) }
 
-  const parsed = InstructionParser.parse(sources)
-  const reconciled = InstructionReconciler.reconcile(parsed.entries)
-  const routed = InstructionRouter.route(reconciled.entries, options.prompt)
+  const parsed = parse(sources)
+  const reconciled = reconcile(parsed.entries)
+  const routed = route(reconciled.entries, options.prompt)
 
   const body = [
     '<agent-instructions mode="curated">',
     "Precedence: broad-to-narrow AGENTS guidance, with same-ID narrower entries replacing broader entries.",
     ...routed.selected.map(compactEntry),
   ]
-  const omittedDomains = InstructionRouter.countDomains(routed.omitted)
+  const omittedDomains = countDomains(routed.omitted)
   if (routed.omitted.length > 0) {
     body.push(`Omitted routed domains: ${JSON.stringify(omittedDomains)}`)
   }
@@ -99,5 +99,3 @@ export function render(sources: Source[], options: RenderOptions): Rendered {
 
   return { blocks: [[curatedWithoutTelemetry, telemetryBlock(telemetry)].join("\n")], telemetry }
 }
-
-export * as InstructionRenderer from "./instruction-renderer"

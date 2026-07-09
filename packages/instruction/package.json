@@ -1,0 +1,14 @@
+{
+  "name": "@cookielab/instruction",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Shared agent instruction curation for CookieLab clients",
+  "scripts": {
+    "test": "bun test",
+    "cli": "bun run cli/instruction-cli.ts"
+  },
+  "exports": {
+    ".": "./src/index.ts"
+  }
+}
