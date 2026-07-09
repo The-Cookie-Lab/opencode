@@ -13,7 +13,7 @@ import { withTransientReadRetry } from "@/util/effect-http-client"
 import { Global } from "@opencode-ai/core/global"
 import type { MessageV2 } from "./message-v2"
 import type { MessageID } from "./schema"
-import { InstructionRenderer } from "./instruction-renderer"
+import { InstructionRenderer } from "@cookielab/instruction"
 
 function extract(messages: SessionV1.WithParts[]) {
   const paths = new Set<string>()
