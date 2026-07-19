@@ -9,6 +9,7 @@ export interface OpenAIOptionsInput {
   readonly store?: boolean
   readonly promptCacheKey?: string
   readonly reasoningEffort?: ReasoningEffort
+  readonly reasoningMode?: string
   readonly reasoningSummary?: "auto"
   // OpenAI Responses `include` wire field. Mirrors the official SDK's
   // `ResponseIncludable[]` union exactly so AI SDK callers and direct
@@ -31,6 +32,7 @@ const openAIProviderOptions = (options: OpenAIOptionsInput | undefined): Provide
       store: options?.store,
       promptCacheKey: options?.promptCacheKey,
       reasoningEffort: options?.reasoningEffort,
+      reasoningMode: options?.reasoningMode,
       reasoningSummary: options?.reasoningSummary,
       include: options?.include,
       textVerbosity: options?.textVerbosity,

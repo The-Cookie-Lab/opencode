@@ -55,6 +55,11 @@ export const reasoningEffort = (request: LLMRequest): ReasoningEffort | undefine
   return isAnyReasoningEffort(value) ? value : undefined
 }
 
+export const reasoningMode = (request: LLMRequest): string | undefined => {
+  const value = options(request)?.reasoningMode
+  return typeof value === "string" ? value : undefined
+}
+
 export const reasoningSummary = (request: LLMRequest): "auto" | undefined =>
   options(request)?.reasoningSummary === "auto" ? "auto" : undefined
 

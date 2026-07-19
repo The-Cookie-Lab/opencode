@@ -66,6 +66,9 @@ import { ProjectDossierTool } from "./project_dossier"
 import { SemanticSearchTool } from "./semantic_search"
 import { ViewOutlineTool } from "./view_outline"
 import { ModelV2 } from "@opencode-ai/core/model"
+import { MCP } from "@/mcp"
+import { PermissionV1 } from "@opencode-ai/core/v1/permission"
+import { McpCatalog } from "@/mcp/catalog"
 
 const log = Log.create({ service: "tool.registry" })
 
@@ -91,6 +94,7 @@ export interface Interface {
     providerID: ProviderV2.ID
     modelID: ModelV2.ID
     agent: Agent.Info
+    permission?: PermissionV1.Ruleset
   }) => Effect.Effect<Tool.Def[]>
 }
 
@@ -124,6 +128,7 @@ export const layer: Layer.Layer<
   | Database.Service
   | ContextIntel.Service
   | LocalModelServerMemory.Service
+  | MCP.Service
 > = Layer.effect(
   Service,
   Effect.gen(function* () {
@@ -132,6 +137,7 @@ export const layer: Layer.Layer<
     const agents = yield* Agent.Service
     const truncate = yield* Truncate.Service
     const flags = yield* RuntimeFlags.Service
+    const mcp = yield* MCP.Service
 
     const invalid = yield* InvalidTool
     const task = yield* TaskTool
@@ -157,6 +163,8 @@ export const layer: Layer.Layer<
     const memsearch = yield* MemSearchTool
     const memread = yield* MemReadTool
     const agent = yield* Agent.Service
+    const codeMode = flags.experimentalCodeMode ? yield* Effect.promise(() => import("./code-mode")) : undefined
+    const codeModeTool = codeMode ? yield* codeMode.CodeModeTool : undefined
 
     const state = yield* InstanceState.make<State>(
       Effect.fn("ToolRegistry.state")(function* (ctx) {
@@ -270,6 +278,7 @@ export const layer: Layer.Layer<
           view_outline: Tool.init(viewOutline),
           memsearch: Tool.init(memsearch),
           memread: Tool.init(memread),
+          ...(codeModeTool ? { execute: Tool.init(codeModeTool) } : {}),
         })
 
         return {
@@ -296,6 +305,7 @@ export const layer: Layer.Layer<
             ...(flags.experimentalScout ? [tool.repo_clone, tool.repo_overview] : []),
             tool.skill,
             tool.patch,
+            ...(tool.execute ? [tool.execute] : []),
             ...(flags.experimentalLspTool ? [tool.lsp] : []),
             ...(flags.experimentalPlanMode && flags.client === "cli" ? [tool.plan] : []),
           ],
@@ -329,6 +339,17 @@ export const layer: Layer.Layer<
       return ["Available agent types and the tools they have access to:", description].join("\n")
     })
 
+    const describeCodeMode = Effect.fn("ToolRegistry.describeCodeMode")(function* (input: {
+      agent: Agent.Info
+      permission?: PermissionV1.Ruleset
+    }) {
+      if (!codeMode) return
+      const ruleset = Permission.merge(input.agent.permission, input.permission ?? [])
+      const tools = Permission.visibleTools(yield* mcp.tools(), ruleset)
+      if (Object.keys(tools).length === 0) return
+      return codeMode.describeCatalog(tools, Object.keys(yield* mcp.clients()).map(McpCatalog.sanitize))
+    })
+
     const tools: Interface["tools"] = Effect.fn("ToolRegistry.tools")(function* (input) {
       const filtered = (yield* all()).filter((tool) => {
         if (tool.id === WebSearchTool.id) {
@@ -346,8 +367,13 @@ export const layer: Layer.Layer<
         return true
       })
 
+      const codeModeDescription = filtered.some((tool) => tool.id === "execute")
+        ? yield* describeCodeMode(input)
+        : undefined
+      const visible = filtered.filter((tool) => tool.id !== "execute" || codeModeDescription)
+
       return yield* Effect.forEach(
-        filtered,
+        visible,
         Effect.fnUntraced(function* (tool: Tool.Def) {
           using _ = log.time(tool.id)
           const output = {
@@ -365,6 +391,7 @@ export const layer: Layer.Layer<
             description: [
               output.description,
               tool.id === TaskTool.id ? yield* describeTask(input.agent) : undefined,
+              tool.id === "execute" ? codeModeDescription : undefined,
             ]
               .filter(Boolean)
               .join("\n"),
@@ -415,6 +442,7 @@ export const node = LayerNode.make({
     Format.node,
     Truncate.node,
     RuntimeFlags.node,
+    MCP.node,
     Database.node,
     ContextIntel.node,
     Ripgrep.node,

@@ -136,6 +136,7 @@ const OpenAIResponsesCoreFields = {
   reasoning: Schema.optional(
     Schema.Struct({
       effort: Schema.optional(OpenAIOptions.OpenAIReasoningEffort),
+      mode: Schema.optional(Schema.String),
       summary: Schema.optional(Schema.Literal("auto")),
     }),
   ),
@@ -459,6 +460,7 @@ const lowerOptions = Effect.fn("OpenAIResponses.lowerOptions")(function* (reques
   const effort = OpenAIOptions.reasoningEffort(request)
   if (effort && !OpenAIOptions.isReasoningEffort(effort))
     return yield* invalid(`OpenAI Responses does not support reasoning effort ${effort}`)
+  const mode = OpenAIOptions.reasoningMode(request)
   const summary = OpenAIOptions.reasoningSummary(request)
   const include = OpenAIOptions.include(request)
   const verbosity = OpenAIOptions.textVerbosity(request)
@@ -469,7 +471,7 @@ const lowerOptions = Effect.fn("OpenAIResponses.lowerOptions")(function* (reques
     ...(store !== undefined ? { store } : {}),
     ...(promptCacheKey ? { prompt_cache_key: promptCacheKey } : {}),
     ...(include ? { include } : {}),
-    ...(effort || summary ? { reasoning: { effort, summary } } : {}),
+    ...(effort || mode || summary ? { reasoning: { effort, mode, summary } } : {}),
     ...(verbosity ? { text: { verbosity } } : {}),
     ...(serviceTier ? { service_tier: serviceTier } : {}),
   }
