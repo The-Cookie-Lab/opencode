@@ -111,4 +111,3 @@ export function removeManagedCursorignoreBlock(text: string) {
   if (!after) return `${before}\n`
   return `${before}\n\n${after}\n`
 }
-

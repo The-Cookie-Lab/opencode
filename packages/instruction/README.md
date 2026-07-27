@@ -1,6 +1,6 @@
-# CookieLayer instruction curation
+# CAT instruction curation
 
-Shared agent instruction curation for CookieLab clients (OpenCode, Cursor, Codex).
+Shared agent instruction curation for CookieLab clients.
 
 ## Layout
 
@@ -51,14 +51,17 @@ Output:
 
 | Client | Adapter |
 | --- | --- |
-| OpenCode | Native import `@cookielab/instruction` from `instruction.ts` |
-| Cursor | `cookielayer-instruction.py` + `cookielayer-pre-tool-use.py` via `config sync cursor` |
-| Codex | `codex-instruction-loader` with `CODEX_INSTRUCTION_MODE=curated` → CLI |
+| OpenCode | Build-integrated mirror with `.cat-source.json` hash/parity guard |
+| Cursor | CAT Python adapter; curated mode invokes this packaged CLI directly |
+| Codex | CAT lifecycle adapter; curated mode invokes this packaged CLI directly |
 
-## Cursor sync
+The compatibility renderer remains the default until the planned instruction
+correctness review. Setting `CAT_INSTRUCTION_MODE=curated` selects the shared
+CLI without returning ownership to model-server.
+
+## Client sync
 
 ```sh
-./cookielab model-server config sync cursor --json
-./cookielab model-server config sync cursor --remove-instruction-hook --json
-./cookielab model-server processors instruction client doctor cursor --json
+./cookielab clients sync all --json
+./cookielab status --verbose --json
 ```
