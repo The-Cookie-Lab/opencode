@@ -32,7 +32,7 @@ describe("resolve-sources v2 routing", () => {
   test("routeApplies uses CI word boundaries", () => {
     expect(routeApplies({ file: "PULL_REQUESTS.md" }, "run ci checks")).toBe(true)
     expect(routeApplies({ file: "PULL_REQUESTS.md" }, "circular dependency")).toBe(false)
-    expect(routeApplies({ file: "SDL_MCP.md" }, "use sdl-mcp tools")).toBe(true)
+    expect(routeApplies({ file: "MACOS_CODEX_ENV.md" }, "configure launchctl")).toBe(true)
   })
 
   test("resolves always-loaded and routed files from codex home", () => {

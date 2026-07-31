@@ -13,7 +13,6 @@ export const STATIC_SUPPRESS_BASENAMES = [
   "GIT_WORKTREES.md",
   "PRD_DELIVERY.md",
   "MACOS_CODEX_ENV.md",
-  "SDL_MCP.md",
 ] as const
 
 const ROUTE_TABLE_RE = /^\|\s*`([^`]+)`\s*\|/

@@ -230,9 +230,6 @@ export function routeApplies(route: { file: string }, contextText: string): bool
   if (name === "MACOS_CODEX_ENV.md") {
     return ["macos", "zsh", "launchctl", "homebrew", "npx", "mcp environment"].some((term) => haystack.includes(term))
   }
-  if (name === "SDL_MCP.md") {
-    return ["sdl", "sdl-mcp", "indexed", "usage stats", "mcp tool"].some((term) => haystack.includes(term))
-  }
   return false
 }
 
