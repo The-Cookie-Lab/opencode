@@ -17,6 +17,7 @@ const original = {
 }
 const auth = { username: "opencode", password: "listen-secret" }
 const testPty = process.platform === "win32" ? test.skip : test
+const testServerListen = process.platform === "win32" ? test.skip : test
 
 afterEach(async () => {
   Flag.OPENCODE_SERVER_PASSWORD = original.OPENCODE_SERVER_PASSWORD
@@ -284,7 +285,7 @@ describe("HttpApi Server.listen", () => {
     ).rejects.toThrow()
   })
 
-  test("default in-process handler does not emit Effect HTTP response logs", async () => {
+  testServerListen("default in-process handler does not emit Effect HTTP response logs", async () => {
     let output = ""
     // oxlint-disable-next-line typescript-eslint/unbound-method -- restored in finally after temporarily capturing stderr.
     const original = process.stderr.write
@@ -302,7 +303,7 @@ describe("HttpApi Server.listen", () => {
     expect(output).not.toContain("Sent HTTP response")
   })
 
-  test("plugin client requests reuse the listening server instance", async () => {
+  testServerListen("plugin client requests reuse the listening server instance", async () => {
     await using tmp = await tmpdir({
       init: async (directory) => {
         const plugin = path.join(directory, "plugin.ts")

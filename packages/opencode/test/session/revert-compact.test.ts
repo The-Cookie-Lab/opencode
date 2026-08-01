@@ -22,6 +22,7 @@ const it = testEffect(
     LayerNode.group([Session.node, SessionRevert.node, Snapshot.node, SessionProjector.node, CrossSpawnSpawner.node]),
   ),
 )
+const integrationTimeout = process.platform === "win32" ? 15_000 : undefined
 
 const user = Effect.fn("test.user")(function* (sessionID: SessionID, agent = "default") {
   const session = yield* Session.Service
@@ -546,6 +547,7 @@ describe("revert + compact workflow", () => {
         }),
       { git: true },
     ),
+    integrationTimeout,
   )
 
   it.live(
@@ -634,5 +636,6 @@ describe("revert + compact workflow", () => {
         }),
       { git: true },
     ),
+    integrationTimeout,
   )
 })

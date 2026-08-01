@@ -305,7 +305,7 @@ describe("macro tools", () => {
             expect(hidden.output).toBe("No results found")
             expect(visible.metadata.count).toBe(2)
             expect(visible.metadata.truncated).toBe(true)
-            expect(visible.output).toContain("src/file")
+            expect(visible.output.replaceAll("\\", "/")).toContain("src/file")
           }),
         { git: true },
       ),
@@ -360,7 +360,7 @@ describe("macro tools", () => {
             expect(result.metadata.mode).toBe("semantic")
             expect(result.metadata.backend).toBe("openviking")
             expect(result.metadata.indexed).toBe(true)
-            expect(result.output).toContain("src/auth.ts")
+            expect(result.output.replaceAll("\\", "/")).toContain("src/auth.ts")
             expect(result.output).toContain("refreshToken")
             expect(openVikingSearchCalls[0]?.target_uri).toBe("viking://resources/workspace/code/src")
           }),
