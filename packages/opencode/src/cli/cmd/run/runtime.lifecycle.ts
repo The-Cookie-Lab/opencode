@@ -190,7 +190,7 @@ export async function createRuntimeLifecycle(input: LifecycleInput): Promise<Lif
       screenMode: "split-footer",
       footerHeight: FOOTER_HEIGHT,
       externalOutputMode: "capture-stdout",
-      consoleMode: "disabled",
+      consoleMode: "console-overlay",
       clearOnShutdown: false,
     })
     const theme = await resolveRunTheme(renderer)
