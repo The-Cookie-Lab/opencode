@@ -88,7 +88,7 @@ export type Lifecycle = {
 // Gracefully tears down the renderer. Order matters: switch external output
 // back to passthrough before leaving split-footer mode, so pending stdout
 // doesn't get captured into the now-dead scrollback pipeline.
-function shutdown(renderer: CliRenderer): void {
+export function shutdownRenderer(renderer: CliRenderer): void {
   if (renderer.isDestroyed) {
     return
   }
@@ -148,6 +148,25 @@ function directoryLabel(directory: string) {
   return display.replaceAll("\\", "/")
 }
 
+export function getRuntimeLifecycleRendererConfig(): Readonly<
+  Omit<Parameters<typeof createCliRenderer>[0], "stdin">
+> {
+  return {
+    targetFps: 30,
+    maxFps: 60,
+    useMouse: false,
+    autoFocus: false,
+    openConsoleOnError: false,
+    exitOnCtrlC: false,
+    useKittyKeyboard: { events: process.platform === "win32" },
+    screenMode: "split-footer",
+    footerHeight: FOOTER_HEIGHT,
+    externalOutputMode: "capture-stdout",
+    consoleMode: "console-overlay",
+    clearOnShutdown: false,
+  } as const
+}
+
 function queueSplash(
   renderer: Pick<CliRenderer, "writeToScrollback" | "requestRender">,
   state: SplashState,
@@ -180,18 +199,7 @@ export async function createRuntimeLifecycle(input: LifecycleInput): Promise<Lif
   try {
     const renderer = await createCliRenderer({
       stdin: source.stdin,
-      targetFps: 30,
-      maxFps: 60,
-      useMouse: false,
-      autoFocus: false,
-      openConsoleOnError: false,
-      exitOnCtrlC: false,
-      useKittyKeyboard: { events: process.platform === "win32" },
-      screenMode: "split-footer",
-      footerHeight: FOOTER_HEIGHT,
-      externalOutputMode: "capture-stdout",
-      consoleMode: "console-overlay",
-      clearOnShutdown: false,
+      ...getRuntimeLifecycleRendererConfig(),
     })
     const theme = await resolveRunTheme(renderer)
     renderer.setBackgroundColor(theme.background)
@@ -342,7 +350,7 @@ export async function createRuntimeLifecycle(input: LifecycleInput): Promise<Lif
         await footer.idle().catch(() => {})
         footer.destroy()
         unregisterKeymap?.()
-        shutdown(renderer)
+        shutdownRenderer(renderer)
         if (!wroteExit) {
           process.stdout.write("\n")
         }
