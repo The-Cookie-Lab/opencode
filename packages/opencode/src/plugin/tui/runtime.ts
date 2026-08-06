@@ -44,6 +44,20 @@ import { RuntimeFlags } from "@/effect/runtime-flags"
 import { Effect } from "effect"
 import { createPluginRuntime, type PluginRuntime, type TuiPluginHost } from "@opencode-ai/tui/plugin/runtime"
 
+function shouldPrintLogs() {
+  return process.env.OPENCODE_PRINT_LOGS === "1"
+}
+
+function logError(message: string, data: Record<string, unknown>) {
+  if (!shouldPrintLogs()) return
+  console.error(message, data)
+}
+
+function logWarn(message: string, data: Record<string, unknown>) {
+  if (!shouldPrintLogs()) return
+  console.warn(message, data)
+}
+
 ensureRuntimePluginSupport({ additional: keymapRuntimeModules })
 
 type PluginLoad = {
@@ -127,17 +141,17 @@ const EMPTY_TUI: TuiPluginModule = {
 
 function fail(message: string, data: Record<string, unknown>) {
   if (!("error" in data)) {
-    console.error(`[tui.plugin] ${message}`, data)
+    logError(`[tui.plugin] ${message}`, data)
     return
   }
 
   const text = `${message}: ${errorMessage(data.error)}`
   const next = { ...data, error: errorData(data.error) }
-  console.error(`[tui.plugin] ${text}`, next)
+  logError(`[tui.plugin] ${text}`, next)
 }
 
 function warn(message: string, data: Record<string, unknown>) {
-  console.warn(`[tui.plugin] ${message}`, data)
+  logWarn(`[tui.plugin] ${message}`, data)
 }
 
 function createScopedKeymap(keymap: TuiPluginApi["keymap"], scope: PluginScope): TuiPluginApi["keymap"] {

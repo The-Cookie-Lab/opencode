@@ -25,6 +25,7 @@ import { Filesystem } from "@/util/filesystem"
 import { createOpencodeClient, type OpencodeClient, type ToolPart } from "@opencode-ai/sdk/v2"
 import { FormatError, FormatUnknownError } from "../error"
 import { INTERACTIVE_INPUT_ERROR, resolveInteractiveStdin } from "./run/runtime.stdin"
+import { OPENCODE_TUI, redirectTuiWorkerIO } from "../tui/stdio"
 
 type ModelInput = Parameters<OpencodeClient["session"]["prompt"]>[0]["model"]
 
@@ -268,9 +269,10 @@ export const RunCommand = effectCmd({
     const agentSvc = yield* Agent.Service
     const flags = yield* RuntimeFlags.Service
     const localInstance = yield* InstanceRef
+    const interactive = args.mini || args.interactive
+    if (interactive) process.env[OPENCODE_TUI] = "1"
     yield* Effect.promise(async () => {
       const rawMessage = [...args.message, ...(args["--"] || [])].join(" ")
-      const interactive = args.mini
       const auto = args.auto || args.yolo || args["dangerously-skip-permissions"]
       const thinking = interactive ? (args.thinking ?? true) : (args.thinking ?? false)
       const die = (message: string): never => {
@@ -824,6 +826,7 @@ export const RunCommand = effectCmd({
         const agent = await pickAgent(client)
 
         await share(client, sessionID)
+        const model = pick(args.model)
 
         if (!interactive) {
           const events = await client.event.subscribe()
@@ -855,7 +858,6 @@ export const RunCommand = effectCmd({
             return
           }
 
-          const model = pick(args.model)
           const result = await client.session.prompt({
             sessionID,
             agent,
@@ -872,36 +874,71 @@ export const RunCommand = effectCmd({
           return
         }
 
-        const model = pick(args.model)
         const { runInteractiveMode } = await import("./run/runtime")
-        try {
-          await runInteractiveMode({
-            sdk: client,
-            directory: cwd,
-            sessionID,
-            sessionTitle: sess.title,
-            resume: Boolean(args.session || args.continue) && !args.fork,
-            replay,
-            replayLimit: args["replay-limit"],
-            agent,
-            model,
-            variant: args.variant,
-            files,
-            initialInput,
-            createSession: createFreshSession,
-            thinking,
-            backgroundSubagents: flags.experimentalBackgroundSubagents,
-            demo: args.demo,
-          })
-        } catch (error) {
+        await runInteractiveMode({
+          sdk: client,
+          directory: cwd,
+          sessionID,
+          sessionTitle: sess.title,
+          resume: Boolean(args.session || args.continue) && !args.fork,
+          replay,
+          replayLimit: args["replay-limit"],
+          agent,
+          model,
+          variant: args.variant,
+          files,
+          initialInput,
+          createSession: createFreshSession,
+          thinking,
+          backgroundSubagents: flags.experimentalBackgroundSubagents,
+          demo: args.demo,
+        }).catch((error) => {
           dieInteractive(error)
-        }
-        return
+        })
       }
 
-      if (interactive && !args.attach && !args.session && !args.continue) {
-        const model = pick(args.model)
-        const { runInteractiveLocalMode } = await import("./run/runtime")
+      const restoreTuiIO = interactive ? redirectTuiWorkerIO() : undefined
+      try {
+        if (interactive && !args.attach && !args.session && !args.continue) {
+          const { runInteractiveLocalMode } = await import("./run/runtime")
+          const fetchFn = (async (input: RequestInfo | URL, init?: RequestInit) => {
+            const { Server } = await import("@/server/server")
+            const request = new Request(input, init)
+            const headers = new Headers(request.headers)
+            const auth = ServerAuth.header()
+            if (auth) headers.set("Authorization", auth)
+            return Server.Default().app.fetch(new Request(request, { headers }))
+          }) as typeof globalThis.fetch
+
+          try {
+            return await runInteractiveLocalMode({
+              directory: directory ?? root,
+              fetch: fetchFn,
+              resolveAgent: localAgent,
+              session,
+              share,
+              createSession: createFreshSession,
+              agent: args.agent,
+              model: pick(args.model),
+              variant: args.variant,
+              replay,
+              replayLimit: args["replay-limit"],
+              files,
+              initialInput,
+              thinking,
+              backgroundSubagents: flags.experimentalBackgroundSubagents,
+              demo: args.demo,
+            })
+          } catch (error) {
+            dieInteractive(error)
+          }
+        }
+
+        if (args.attach) {
+          const sdk = attachSDK(directory)
+          return await execute(sdk)
+        }
+
         const fetchFn = (async (input: RequestInfo | URL, init?: RequestInit) => {
           const { Server } = await import("@/server/server")
           const request = new Request(input, init)
@@ -910,52 +947,18 @@ export const RunCommand = effectCmd({
           if (auth) headers.set("Authorization", auth)
           return Server.Default().app.fetch(new Request(request, { headers }))
         }) as typeof globalThis.fetch
-
-        try {
-          return await runInteractiveLocalMode({
-            directory: directory ?? root,
-            fetch: fetchFn,
-            resolveAgent: localAgent,
-            session,
-            share,
-            createSession: createFreshSession,
-            agent: args.agent,
-            model,
-            variant: args.variant,
-            replay,
-            replayLimit: args["replay-limit"],
-            files,
-            initialInput,
-            thinking,
-            backgroundSubagents: flags.experimentalBackgroundSubagents,
-            demo: args.demo,
-          })
-        } catch (error) {
-          dieInteractive(error)
-        }
+        const sdk = createOpencodeClient({
+          baseUrl: "http://opencode.internal",
+          fetch: fetchFn,
+          directory,
+        })
+        await execute(sdk)
+      } finally {
+        restoreTuiIO?.()
       }
-
-      if (args.attach) {
-        const sdk = attachSDK(directory)
-        return await execute(sdk)
       }
-
-      const fetchFn = (async (input: RequestInfo | URL, init?: RequestInit) => {
-        const { Server } = await import("@/server/server")
-        const request = new Request(input, init)
-        const headers = new Headers(request.headers)
-        const auth = ServerAuth.header()
-        if (auth) headers.set("Authorization", auth)
-        return Server.Default().app.fetch(new Request(request, { headers }))
-      }) as typeof globalThis.fetch
-      const sdk = createOpencodeClient({
-        baseUrl: "http://opencode.internal",
-        fetch: fetchFn,
-        directory,
-      })
-      await execute(sdk)
-    })
-  }),
+      )
+   }),
 })
 
 type MiniCommandInput = {

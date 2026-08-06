@@ -20,6 +20,7 @@ import permissionSoundPath from "@opencode-ai/ui/audio/staplebops-06.mp3" with {
 import errorSoundPath from "@opencode-ai/ui/audio/nope-03.mp3" with { type: "file" }
 import doneSoundPath from "@opencode-ai/ui/audio/bip-bop-01.mp3" with { type: "file" }
 import subagentDoneSoundPath from "@opencode-ai/ui/audio/yup-01.mp3" with { type: "file" }
+import { logDebug } from "./util/logging"
 
 type FocusState = "unknown" | "focused" | "blurred"
 
@@ -152,7 +153,7 @@ export function createTuiAttention(input: {
     try {
       for (const file of soundCandidates(name)) {
         const current = await audio.loadSoundFile(file).catch((error) => {
-          console.debug("failed to load attention sound", { file, error })
+          logDebug("failed to load attention sound", { file, error })
           return null
         })
         if (disposed) return false
@@ -161,7 +162,7 @@ export function createTuiAttention(input: {
       }
       return false
     } catch (error) {
-      console.debug("failed to play attention sound", { error })
+      logDebug("failed to play attention sound", { error })
       return false
     }
   }
@@ -187,7 +188,7 @@ export function createTuiAttention(input: {
                   normalizeText(request.title, DEFAULT_TITLE, TITLE_LIMIT),
                 )
               } catch (error) {
-                console.debug("failed to trigger attention notification", { error })
+                logDebug("failed to trigger attention notification", { error })
                 return false
               }
             })()
@@ -210,7 +211,7 @@ export function createTuiAttention(input: {
           sound,
         }
       } catch (error) {
-        console.debug("failed to handle attention notification", { error })
+        logDebug("failed to handle attention notification", { error })
         return {
           ok: false,
           notification: false,

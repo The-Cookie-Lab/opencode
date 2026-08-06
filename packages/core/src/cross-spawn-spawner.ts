@@ -50,6 +50,36 @@ const toTag = (err: NodeJS.ErrnoException): PlatformError.SystemErrorTag => {
   }
 }
 
+const shouldIsolateTuiSubprocessIO = () =>
+  globalThis.process.env.OPENCODE_TUI === "1" && globalThis.process.env.OPENCODE_PRINT_LOGS !== "1"
+
+const normalizeTuiSubprocessStdio = (stdio: NodeChildProcess.IOType): NodeChildProcess.IOType => {
+  if (!shouldIsolateTuiSubprocessIO()) return stdio
+  if (stdio === "inherit") return "ignore"
+  return stdio
+}
+
+export const normalizeTuiSubprocessStdioConfig = (
+  cfg: ChildProcess.StdoutConfig | ChildProcess.StderrConfig | ChildProcess.CommandOutput | undefined,
+): ChildProcess.StdoutConfig => {
+  if (Predicate.isUndefined(cfg)) return { stream: "pipe" }
+
+  if (typeof cfg === "string") {
+    return { stream: normalizeTuiSubprocessStdio(cfg as NodeChildProcess.IOType) }
+  }
+
+  if (Sink.isSink(cfg)) {
+    return { stream: cfg }
+  }
+
+  const output = (cfg as { stream: ChildProcess.CommandOutput | NodeChildProcess.IOType }).stream
+  if (Sink.isSink(output)) {
+    return { stream: output }
+  }
+
+  return { stream: normalizeTuiSubprocessStdio(output as NodeChildProcess.IOType) }
+}
+
 const flatten = (command: ChildProcess.Command) => {
   const commands: Array<ChildProcess.StandardCommand> = []
   const opts: Array<ChildProcess.PipeOptions> = []
@@ -127,13 +157,8 @@ export const make = Effect.gen(function* () {
     }
   }
 
-  const stdio = (opts: ChildProcess.CommandOptions, key: "stdout" | "stderr"): ChildProcess.StdoutConfig => {
-    const cfg = opts[key]
-    if (Predicate.isUndefined(cfg)) return { stream: "pipe" }
-    if (typeof cfg === "string") return { stream: cfg }
-    if (Sink.isSink(cfg)) return { stream: cfg }
-    return { stream: cfg.stream }
-  }
+  const stdio = (opts: ChildProcess.CommandOptions, key: "stdout" | "stderr") =>
+    normalizeTuiSubprocessStdioConfig(opts[key])
 
   const fds = (opts: ChildProcess.CommandOptions) => {
     if (Predicate.isUndefined(opts.additionalFds)) return []

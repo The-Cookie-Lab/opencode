@@ -1,11 +1,11 @@
-import { describe, expect } from "bun:test"
+import { describe, expect, it } from "bun:test"
 import fs from "node:fs/promises"
 import os from "node:os"
 import path from "node:path"
 import { Effect, Exit, Stream } from "effect"
 import type * as PlatformError from "effect/PlatformError"
 import { ChildProcess, ChildProcessSpawner } from "effect/unstable/process"
-import { CrossSpawnSpawner } from "@opencode-ai/core/cross-spawn-spawner"
+import { CrossSpawnSpawner, normalizeTuiSubprocessStdioConfig } from "@opencode-ai/core/cross-spawn-spawner"
 import { LayerNode } from "@opencode-ai/core/effect/layer-node"
 import { testEffect } from "../lib/effect"
 
@@ -187,6 +187,82 @@ describe("cross-spawn spawner", () => {
         })
         expect(stdout).toBe("stdout")
         expect(stderr).toBe("stderr")
+      }),
+    )
+  })
+
+  describe("stdio isolation for TUI mode", () => {
+    const runWithTuiEnv = <T>(
+      enabled: boolean,
+      fn: (set: (key: string | undefined, value: string | undefined) => void) => T,
+    ) => {
+      const previousTui = process.env.OPENCODE_TUI
+      const previousPrintLogs = process.env.OPENCODE_PRINT_LOGS
+
+      const set = (key: string | undefined, value: string | undefined) => {
+        if (key === undefined || value === undefined) {
+          delete process.env[key as keyof NodeJS.ProcessEnv]
+          return
+        }
+        process.env[key] = value
+      }
+
+      try {
+        if (enabled) {
+          process.env.OPENCODE_TUI = "1"
+          delete process.env.OPENCODE_PRINT_LOGS
+        } else {
+          delete process.env.OPENCODE_TUI
+          delete process.env.OPENCODE_PRINT_LOGS
+        }
+        return fn(set)
+      } finally {
+        if (previousTui === undefined) {
+          delete process.env.OPENCODE_TUI
+        } else {
+          process.env.OPENCODE_TUI = previousTui
+        }
+        if (previousPrintLogs === undefined) {
+          delete process.env.OPENCODE_PRINT_LOGS
+        } else {
+          process.env.OPENCODE_PRINT_LOGS = previousPrintLogs
+        }
+      }
+    }
+
+    fx.effect(
+      "maps string inherit stdio to ignore when OPENCODE_TUI is enabled",
+      Effect.sync(() => {
+        runWithTuiEnv(true, () => {
+          expect(normalizeTuiSubprocessStdioConfig("inherit")).toEqual({ stream: "ignore" })
+        })
+      }),
+    )
+
+    fx.effect(
+      "maps object-config inherit stream to ignore when OPENCODE_TUI is enabled",
+      Effect.sync(() => {
+        runWithTuiEnv(true, () => {
+          expect(
+            normalizeTuiSubprocessStdioConfig({
+              stream: "inherit",
+            }),
+          ).toEqual({ stream: "ignore" })
+        })
+      }),
+    )
+
+    fx.effect(
+      "keeps inherit stdio through when TUI isolation is disabled",
+      Effect.sync(() => {
+        runWithTuiEnv(false, () => {
+          expect(normalizeTuiSubprocessStdioConfig("inherit")).toEqual({ stream: "inherit" })
+          expect(
+            normalizeTuiSubprocessStdioConfig({
+              stream: "inherit",
+            }),
+          ).toEqual({ stream: "inherit" })
+        })
       }),
     )
   })

@@ -16,10 +16,34 @@ describe("tui thread", () => {
     expect(source).not.toContain('import("./app")')
   })
 
+  test("validates mini tui sessions before runtime redirection", async () => {
+    const source = await Bun.file(new URL("../../../src/cli/cmd/tui.ts", import.meta.url)).text()
+    const miniMarker = 'if (args.mini) {'
+    const miniEndMarker = "const unsupported = ["
+    const miniMarkerIndex = source.indexOf(miniMarker)
+    const miniBlock = source.slice(miniMarkerIndex, source.indexOf(miniEndMarker, miniMarkerIndex))
+    const importMarker = 'const { runMini } = await import("./run")'
+
+    expect(miniMarkerIndex).toBeGreaterThan(-1)
+    expect(miniBlock).not.toContain("const restoreTuiIO = redirectTuiWorkerIO()")
+    expect(miniBlock).toContain(importMarker)
+    expect(miniBlock).toContain("finally")
+    expect(miniBlock).toContain("runMini({")
+  })
+
+  test("clears OPENCODE_PRINT_LOGS in-process by default", async () => {
+    const source = await Bun.file(new URL("../../../src/cli/cmd/tui.ts", import.meta.url)).text()
+
+    expect(source).toContain("const shouldPrintLogs = Boolean(args.printLogs)")
+    expect(source).toContain("delete process.env.OPENCODE_PRINT_LOGS")
+    expect(source).toMatch(/if \(!shouldPrintLogs\) \{\s+delete workerEnv\.OPENCODE_PRINT_LOGS\s+\}/)
+  })
+
   test("forwards the CLI environment to the TUI worker", async () => {
     const source = await Bun.file(new URL("../../../src/cli/cmd/tui.ts", import.meta.url)).text()
 
-    expect(source).toMatch(/new Worker\(file, \{\s*env: Object\.fromEntries\(\s*Object\.entries\(process\.env\)/)
+    expect(source).toContain("const workerEnv = Object.fromEntries(")
+    expect(source).toMatch(/if \(!shouldPrintLogs\) \{\s*delete workerEnv\.OPENCODE_PRINT_LOGS\s*\}/)
   })
 
   async function check(project?: string) {
@@ -86,7 +110,7 @@ describe("tui thread", () => {
       const result = yield* opencode.spawn(["attach", "http://127.0.0.1:1", "--mini"])
 
       opencode.expectExit(result, 1)
-      expect(result.stderr).toContain("--mini requires a TTY stdout")
+      expect(result.stdout + result.stderr).toContain("--mini requires a TTY stdout")
     }),
   )
 

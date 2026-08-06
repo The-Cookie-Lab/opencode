@@ -86,6 +86,7 @@ import * as TuiAudio from "./audio"
 import { win32DisableProcessedInput, win32FlushInputBuffer } from "./terminal-win32"
 import { destroyRenderer } from "./util/renderer"
 import { cliErrorMessage, errorFormat } from "./util/error"
+import { isPrintLogsEnabled, logDebug, logError } from "./util/logging"
 
 registerOpencodeSpinner()
 
@@ -186,180 +187,196 @@ function isVersionGreater(left: string, right: string) {
 export const run = Effect.fn("Tui.run")(function* (input: TuiInput) {
   const global = yield* Global.Service
   const exit = { epilogue: undefined as string | undefined, reason: undefined as unknown }
-  const result = yield* Effect.scoped(
-    Effect.gen(function* () {
-      const renderer = yield* Effect.acquireRelease(
-        Effect.tryPromise({
-          try: () =>
-            createCliRenderer({
-              externalOutputMode: "passthrough",
-              targetFps: 60,
-              gatherStats: false,
-              exitOnCtrlC: false,
-              useKittyKeyboard: {},
-              autoFocus: false,
-              openConsoleOnError: false,
-              useMouse: !Flag.OPENCODE_DISABLE_MOUSE && input.config.mouse,
-              consoleOptions: {
-                keyBindings: [{ name: "y", ctrl: true, action: "copy-selection" }],
-              },
-            }),
-          catch: (error) => (error instanceof Error ? error : new Error(String(error))),
-        }),
-        (renderer) =>
-          Effect.sync(() => {
-            destroyRenderer(renderer)
+  const shouldPrintLogs = isPrintLogsEnabled()
+  const rendererOptions = shouldPrintLogs
+    ? { externalOutputMode: "passthrough" as const }
+    : {
+        screenMode: "split-footer" as const,
+        externalOutputMode: "capture-stdout" as const,
+        consoleMode: "disabled" as const,
+      }
+  const originalStderrWrite = shouldPrintLogs ? undefined : process.stderr.write
+  if (!shouldPrintLogs) {
+    process.stderr.write = ((chunk, encoding, callback) => process.stdout.write(chunk, encoding, callback)) as typeof process.stderr.write
+  }
+  try {
+    const result = yield* Effect.scoped(
+      Effect.gen(function* () {
+        const renderer = yield* Effect.acquireRelease(
+          Effect.tryPromise({
+            try: () =>
+              createCliRenderer({
+                ...rendererOptions,
+                targetFps: 60,
+                gatherStats: false,
+                exitOnCtrlC: false,
+                useKittyKeyboard: {},
+                autoFocus: false,
+                openConsoleOnError: false,
+                useMouse: !Flag.OPENCODE_DISABLE_MOUSE && input.config.mouse,
+                consoleOptions: {
+                  keyBindings: [{ name: "y", ctrl: true, action: "copy-selection" }],
+                },
+              }),
+            catch: (error) => (error instanceof Error ? error : new Error(String(error))),
           }),
-      )
-      win32DisableProcessedInput()
-      const keymap = createDefaultOpenTuiKeymap(renderer)
-      yield* Effect.acquireRelease(
-        Effect.sync(() => registerOpencodeKeymap(keymap, renderer, input.config)),
-        (unregister) => Effect.sync(unregister),
-      )
-      yield* Effect.addFinalizer(() =>
-        Effect.promise(async () => {
-          try {
-            await input.pluginHost.dispose()
-          } catch (error) {
-            console.error("Failed to dispose TUI plugins", error)
-          }
-        }),
-      )
-      yield* Effect.addFinalizer(() => Effect.sync(TuiAudio.dispose))
-      const shutdown = yield* Deferred.make<unknown>()
-      const onSighup = () => destroyRenderer(renderer)
-      yield* Effect.acquireRelease(
-        Effect.sync(() => process.on("SIGHUP", onSighup)),
-        () => Effect.sync(() => process.off("SIGHUP", onSighup)),
-      )
-      renderer.once("destroy", () => Deferred.doneUnsafe(shutdown, Effect.void))
-      const pluginRuntime = createPluginRuntime()
+          (renderer) =>
+            Effect.sync(() => {
+              destroyRenderer(renderer)
+            }),
+        )
+        win32DisableProcessedInput()
+        const keymap = createDefaultOpenTuiKeymap(renderer)
+        yield* Effect.acquireRelease(
+          Effect.sync(() => registerOpencodeKeymap(keymap, renderer, input.config)),
+          (unregister) => Effect.sync(unregister),
+        )
+        yield* Effect.addFinalizer(() =>
+          Effect.promise(async () => {
+            try {
+              await input.pluginHost.dispose()
+            } catch (error) {
+              logError("Failed to dispose TUI plugins", error)
+            }
+          }),
+        )
+        yield* Effect.addFinalizer(() => Effect.sync(TuiAudio.dispose))
+        const shutdown = yield* Deferred.make<unknown>()
+        const onSighup = () => destroyRenderer(renderer)
+        yield* Effect.acquireRelease(
+          Effect.sync(() => process.on("SIGHUP", onSighup)),
+          () => Effect.sync(() => process.off("SIGHUP", onSighup)),
+        )
+        renderer.once("destroy", () => Deferred.doneUnsafe(shutdown, Effect.void))
+        const pluginRuntime = createPluginRuntime()
 
-      yield* Effect.tryPromise(async () => {
-        // Prewarm palette before ThemeProvider mounts so `system` theme avoids a first-paint fallback flash.
-        void renderer.getPalette({ size: 16 }).catch(() => undefined)
-        const mode = (await renderer.waitForThemeMode(1000)) ?? "dark"
-        if (renderer.isDestroyed) return
+        yield* Effect.tryPromise(async () => {
+          // Prewarm palette before ThemeProvider mounts so `system` theme avoids a first-paint fallback flash.
+          void renderer.getPalette({ size: 16 }).catch(() => undefined)
+          const mode = (await renderer.waitForThemeMode(1000)) ?? "dark"
+          if (renderer.isDestroyed) return
 
-        await render(() => {
-          return (
-            <ExitProvider
-              exit={(reason) => {
-                if (renderer.isDestroyed) return
-                exit.reason = reason
-                destroyRenderer(renderer)
-              }}
-            >
-              <EpilogueProvider set={(value) => (exit.epilogue = value)}>
-                <ErrorBoundary fallback={(error, reset) => <ErrorComponent error={error} reset={reset} mode={mode} />}>
-                  <TuiPathsProvider
-                    value={{
-                      cwd: process.cwd(),
-                      home: global.home,
-                      state: global.state,
-                      worktree: global.data + "/worktree",
-                    }}
-                  >
-                    <TuiTerminalEnvironmentProvider
+          await render(() => {
+            return (
+              <ExitProvider
+                exit={(reason) => {
+                  if (renderer.isDestroyed) return
+                  exit.reason = reason
+                  destroyRenderer(renderer)
+                }}
+              >
+                <EpilogueProvider set={(value) => (exit.epilogue = value)}>
+                  <ErrorBoundary fallback={(error, reset) => <ErrorComponent error={error} reset={reset} mode={mode} />}>
+                    <TuiPathsProvider
                       value={{
-                        platform: process.platform,
-                        multiplexer: process.env.TMUX ? "tmux" : process.env.STY ? "screen" : undefined,
-                        displayServer: process.env.WAYLAND_DISPLAY
-                          ? "wayland"
-                          : process.env.DISPLAY
-                            ? "x11"
-                            : undefined,
+                        cwd: process.cwd(),
+                        home: global.home,
+                        state: global.state,
+                        worktree: global.data + "/worktree",
                       }}
                     >
-                      <TuiStartupProvider
+                      <TuiTerminalEnvironmentProvider
                         value={{
-                          initialRoute: process.env.OPENCODE_ROUTE ? JSON.parse(process.env.OPENCODE_ROUTE) : undefined,
-                          skipInitialLoading: Boolean(process.env.OPENCODE_FAST_BOOT),
+                          platform: process.platform,
+                          multiplexer: process.env.TMUX ? "tmux" : process.env.STY ? "screen" : undefined,
+                          displayServer: process.env.WAYLAND_DISPLAY
+                            ? "wayland"
+                            : process.env.DISPLAY
+                              ? "x11"
+                              : undefined,
                         }}
                       >
-                        <ClipboardProvider>
-                          <OpencodeKeymapProvider keymap={keymap}>
-                            <ArgsProvider {...input.args}>
-                              <KVProvider>
-                                <ToastProvider>
-                                  <RouteProvider
-                                    initialRoute={
-                                      input.args.continue
-                                        ? {
-                                            type: "session",
-                                            sessionID: "dummy",
-                                          }
-                                        : undefined
-                                    }
-                                  >
-                                    <TuiConfigProvider config={input.config}>
-                                      <PluginRuntimeProvider value={pluginRuntime}>
-                                        <SDKProvider
-                                          url={input.url}
-                                          directory={input.directory}
-                                          fetch={input.fetch}
-                                          headers={input.headers}
-                                          events={input.events}
-                                        >
-                                          <PermissionProvider>
-                                            <ProjectProvider>
-                                              <SyncProvider>
-                                                <DataProvider>
-                                                  <ThemeProvider mode={mode}>
-                                                    <LocalProvider>
-                                                      <PromptStashProvider>
-                                                        <DialogProvider>
-                                                          <FrecencyProvider>
-                                                            <PromptHistoryProvider>
-                                                              <PromptRefProvider>
-                                                                <EditorContextProvider>
-                                                                  <LocationProvider>
-                                                                    <App
-                                                                      onSnapshot={input.onSnapshot}
-                                                                      pluginHost={input.pluginHost}
-                                                                    />
-                                                                  </LocationProvider>
-                                                                </EditorContextProvider>
-                                                              </PromptRefProvider>
-                                                            </PromptHistoryProvider>
-                                                          </FrecencyProvider>
-                                                        </DialogProvider>
-                                                      </PromptStashProvider>
-                                                    </LocalProvider>
-                                                  </ThemeProvider>
-                                                </DataProvider>
-                                              </SyncProvider>
-                                            </ProjectProvider>
-                                          </PermissionProvider>
-                                        </SDKProvider>
-                                      </PluginRuntimeProvider>
-                                    </TuiConfigProvider>
-                                  </RouteProvider>
-                                </ToastProvider>
-                              </KVProvider>
-                            </ArgsProvider>
-                          </OpencodeKeymapProvider>
-                        </ClipboardProvider>
-                      </TuiStartupProvider>
-                    </TuiTerminalEnvironmentProvider>
-                  </TuiPathsProvider>
-                </ErrorBoundary>
-              </EpilogueProvider>
-            </ExitProvider>
-          )
-        }, renderer)
-      })
-      yield* Deferred.await(shutdown)
-      return { epilogue: exit.epilogue, reason: exit.reason }
-    }),
-  )
-  yield* Effect.sync(() => {
-    win32FlushInputBuffer()
-    if (result.reason !== undefined)
-      process.stderr.write((cliErrorMessage(result.reason) ?? errorFormat(result.reason)) + "\n")
-    if (result.epilogue) process.stdout.write(result.epilogue + "\n")
-  })
+                        <TuiStartupProvider
+                          value={{
+                            initialRoute: process.env.OPENCODE_ROUTE ? JSON.parse(process.env.OPENCODE_ROUTE) : undefined,
+                            skipInitialLoading: Boolean(process.env.OPENCODE_FAST_BOOT),
+                          }}
+                        >
+                          <ClipboardProvider>
+                            <OpencodeKeymapProvider keymap={keymap}>
+                              <ArgsProvider {...input.args}>
+                                <KVProvider>
+                                  <ToastProvider>
+                                    <RouteProvider
+                                      initialRoute={
+                                        input.args.continue
+                                          ? {
+                                              type: "session",
+                                              sessionID: "dummy",
+                                            }
+                                          : undefined
+                                      }
+                                    >
+                                      <TuiConfigProvider config={input.config}>
+                                        <PluginRuntimeProvider value={pluginRuntime}>
+                                          <SDKProvider
+                                            url={input.url}
+                                            directory={input.directory}
+                                            fetch={input.fetch}
+                                            headers={input.headers}
+                                            events={input.events}
+                                          >
+                                            <PermissionProvider>
+                                              <ProjectProvider>
+                                                <SyncProvider>
+                                                  <DataProvider>
+                                                    <ThemeProvider mode={mode}>
+                                                      <LocalProvider>
+                                                        <PromptStashProvider>
+                                                          <DialogProvider>
+                                                            <FrecencyProvider>
+                                                              <PromptHistoryProvider>
+                                                                <PromptRefProvider>
+                                                                  <EditorContextProvider>
+                                                                    <LocationProvider>
+                                                                      <App
+                                                                        onSnapshot={input.onSnapshot}
+                                                                        pluginHost={input.pluginHost}
+                                                                      />
+                                                                    </LocationProvider>
+                                                                  </EditorContextProvider>
+                                                                </PromptRefProvider>
+                                                              </PromptHistoryProvider>
+                                                            </FrecencyProvider>
+                                                          </DialogProvider>
+                                                        </PromptStashProvider>
+                                                      </LocalProvider>
+                                                    </ThemeProvider>
+                                                  </DataProvider>
+                                                </SyncProvider>
+                                              </ProjectProvider>
+                                            </PermissionProvider>
+                                          </SDKProvider>
+                                        </PluginRuntimeProvider>
+                                      </TuiConfigProvider>
+                                    </RouteProvider>
+                                  </ToastProvider>
+                                </KVProvider>
+                              </ArgsProvider>
+                            </OpencodeKeymapProvider>
+                          </ClipboardProvider>
+                        </TuiStartupProvider>
+                      </TuiTerminalEnvironmentProvider>
+                    </TuiPathsProvider>
+                  </ErrorBoundary>
+                </EpilogueProvider>
+              </ExitProvider>
+            )
+          }, renderer)
+        })
+        yield* Deferred.await(shutdown)
+        return { epilogue: exit.epilogue, reason: exit.reason }
+      }),
+    )
+    yield* Effect.sync(() => {
+      win32FlushInputBuffer()
+      if (result.reason !== undefined)
+        process.stderr.write((cliErrorMessage(result.reason) ?? errorFormat(result.reason)) + "\n")
+      if (result.epilogue) process.stdout.write(result.epilogue + "\n")
+    })
+  } finally {
+    if (originalStderrWrite) process.stderr.write = originalStderrWrite
+  }
 })
 
 function App(props: { onSnapshot?: () => Promise<string[]>; pluginHost: TuiPluginHost }) {
@@ -413,7 +430,7 @@ function App(props: { onSnapshot?: () => Promise<string[]>; pluginHost: TuiPlugi
       dispose: () => attention.dispose(),
     })
     .catch((error) => {
-      console.error("Failed to load TUI plugins", error)
+      logError("Failed to load TUI plugins", error)
     })
     .finally(() => {
       setReady(true)
@@ -1029,7 +1046,7 @@ function App(props: { onSnapshot?: () => Promise<string[]>; pluginHost: TuiPlugi
   })
 
   event.on("installation.update-available", async (evt) => {
-    console.log("installation.update-available", evt)
+    logDebug("installation.update-available", evt)
     const version = evt.properties.version
 
     const skipped = kv.get("skipped_version")

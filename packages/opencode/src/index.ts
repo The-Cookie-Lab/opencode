@@ -64,7 +64,11 @@ const cli = yargs(args)
     type: "boolean",
   })
   .middleware(async (opts) => {
-    if (opts.printLogs) process.env.OPENCODE_PRINT_LOGS = "1"
+    if (opts.printLogs) {
+      process.env.OPENCODE_PRINT_LOGS = "1"
+    } else {
+      delete process.env.OPENCODE_PRINT_LOGS
+    }
     if (opts.logLevel) process.env.OPENCODE_LOG_LEVEL = opts.logLevel
     if (opts.pure) {
       process.env.OPENCODE_PURE = "1"

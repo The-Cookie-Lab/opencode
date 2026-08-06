@@ -303,6 +303,8 @@ test("does not use npm package main for tui entry", async () => {
   const install = spyOn(Npm, "add").mockResolvedValue({ directory: tmp.extra.mod, entrypoint: undefined })
   const warn = spyOn(console, "warn").mockImplementation(() => {})
   const error = spyOn(console, "error").mockImplementation(() => {})
+  const previousPrintLogs = process.env.OPENCODE_PRINT_LOGS
+  process.env.OPENCODE_PRINT_LOGS = "1"
 
   try {
     await TuiPluginRuntime.init({ api: createTuiPluginApi(), config })
@@ -318,6 +320,11 @@ test("does not use npm package main for tui entry", async () => {
     warn.mockRestore()
     error.mockRestore()
     delete process.env.OPENCODE_PLUGIN_META_FILE
+    if (previousPrintLogs === undefined) {
+      delete process.env.OPENCODE_PRINT_LOGS
+    } else {
+      process.env.OPENCODE_PRINT_LOGS = previousPrintLogs
+    }
   }
 })
 

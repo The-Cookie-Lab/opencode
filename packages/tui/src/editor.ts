@@ -9,6 +9,12 @@ import { resolveZedDbPath, resolveZedSelection } from "./editor-zed"
 
 type EditorStdio = "inherit" | "pipe" | "ignore" | number | Stream
 
+export function normalizeTuiEditorStdio(stdio: EditorStdio): EditorStdio {
+  if (process.env.OPENCODE_TUI !== "1" || process.env.OPENCODE_PRINT_LOGS === "1") return stdio
+  return stdio === "inherit" ? "ignore" : stdio
+}
+
+
 export function normalizePromptContent(content: string) {
   if (content.endsWith("\r\n")) {
     const body = content.slice(0, -2)
@@ -35,7 +41,7 @@ export async function openEditor(input: { value: string; renderer: CliRenderer; 
       const parts = editor.split(" ")
       const child = spawn(parts[0]!, [...parts.slice(1), file], {
         cwd: input.cwd && existsSync(input.cwd) ? input.cwd : process.cwd(),
-        stdio: [input.stdin ?? "inherit", "inherit", "inherit"],
+        stdio: [input.stdin ?? "inherit", normalizeTuiEditorStdio("inherit"), normalizeTuiEditorStdio("inherit")],
         shell: process.platform === "win32",
       })
       child.on("error", reject)

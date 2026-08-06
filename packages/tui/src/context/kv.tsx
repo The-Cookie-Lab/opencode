@@ -6,6 +6,7 @@ import { Global } from "@opencode-ai/core/global"
 import { readJson, writeJsonAtomic } from "../util/persistence"
 import { useTuiPaths } from "./runtime"
 import path from "path"
+import { logError } from "../util/logging"
 
 export const { use: useKV, provider: KVProvider } = createSimpleContext({
   name: "KV",
@@ -24,7 +25,7 @@ export const { use: useKV, provider: KVProvider } = createSimpleContext({
         setStore(x)
       })
       .catch((error) => {
-        console.error("Failed to read KV state", { error })
+        logError("Failed to read KV state", { error })
       })
       .finally(() => {
         setReady(true)
@@ -57,7 +58,7 @@ export const { use: useKV, provider: KVProvider } = createSimpleContext({
         write = write
           .then(() => Flock.withLock(lock, () => writeJsonAtomic(file, snapshot)))
           .catch((error) => {
-            console.error("Failed to write KV state", { error })
+            logError("Failed to write KV state", { error })
           })
       },
     }

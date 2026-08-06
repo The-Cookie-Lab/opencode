@@ -14,6 +14,7 @@ import { writeHeapSnapshot } from "v8"
 import { ServerAuth } from "@/server/auth"
 import { validateSession } from "../tui/validate-session"
 import { win32InstallCtrlCGuard } from "@opencode-ai/tui/terminal-win32"
+import { OPENCODE_TUI, redirectTuiWorkerIO } from "../tui/stdio"
 
 declare global {
   const OPENCODE_WORKER_PATH: string
@@ -142,6 +143,14 @@ export const TuiThreadCommand = cmd({
         hidden: true,
       }),
   handler: async (args) => {
+    const shouldPrintLogs = Boolean(args.printLogs)
+    if (shouldPrintLogs) {
+      process.env.OPENCODE_PRINT_LOGS = "1"
+    } else {
+      delete process.env.OPENCODE_PRINT_LOGS
+    }
+    process.env[OPENCODE_TUI] = "1"
+
     if (args.replay === true) {
       UI.error("--replay is not supported; replay is enabled by default")
       process.exitCode = 1
@@ -159,19 +168,26 @@ export const TuiThreadCommand = cmd({
         return
       }
 
-      const { runMini } = await import("./run")
-      await runMini({
-        directory: resolveThreadDirectory(args.project),
-        continue: args.continue,
-        session: args.session,
-        fork: args.fork,
-        model: args.model,
-        agent: args.agent,
-        prompt: args.prompt,
-        replay: noReplay ? false : undefined,
-        replayLimit: args.replayLimit,
-        demo: args.demo,
-      })
+        const { runMini } = await import("./run")
+        const unguard = win32InstallCtrlCGuard()
+        try {
+          await runMini({
+          directory: resolveThreadDirectory(args.project),
+          continue: args.continue,
+          session: args.session,
+          fork: args.fork,
+          model: args.model,
+          agent: args.agent,
+            prompt: args.prompt,
+            replay: noReplay ? false : undefined,
+            replayLimit: args.replayLimit,
+            demo: args.demo,
+          })
+        } finally {
+          try {
+            unguard?.()
+          } catch {}
+        }
       return
     }
 
@@ -187,6 +203,7 @@ export const TuiThreadCommand = cmd({
     }
 
     const unguard = win32InstallCtrlCGuard()
+    const restoreTuiIO = redirectTuiWorkerIO()
     try {
       const { TuiConfig } = await import("@/config/tui")
       if (args.fork && !args.continue && !args.session) {
@@ -207,11 +224,13 @@ export const TuiThreadCommand = cmd({
       }
       const cwd = Filesystem.resolve(process.cwd())
 
-      const worker = new Worker(file, {
-        env: Object.fromEntries(
-          Object.entries(process.env).filter((entry): entry is [string, string] => entry[1] !== undefined),
-        ),
-      })
+      const workerEnv = Object.fromEntries(
+        Object.entries(process.env).filter((entry): entry is [string, string] => entry[1] !== undefined),
+      )
+      if (!shouldPrintLogs) {
+        delete workerEnv.OPENCODE_PRINT_LOGS
+      }
+      const worker = new Worker(file, { env: workerEnv })
       const client = Rpc.client<typeof rpc>(worker)
       const reload = () => {
         client.call("reload", undefined).catch(() => {})
@@ -299,6 +318,7 @@ export const TuiThreadCommand = cmd({
         await stop()
       }
     } finally {
+      restoreTuiIO?.()
       try {
         unguard?.()
       } catch {}
