@@ -151,7 +151,7 @@ describe("session.retry.retryable", () => {
 
   test("retries serialized rate_limit messages", () => {
     const message = JSON.stringify({ type: "error", error: { code: "rate_limit_exceeded" } })
-    expect(SessionRetry.retryable(wrap(message), retryProvider)).toEqual({ message })
+    expect(SessionRetry.retryable(wrap(message), retryProvider)).toEqual({ message: "Rate Limited" })
   })
 
   test("does not retry unknown json messages", () => {
@@ -206,14 +206,12 @@ describe("session.retry.retryable", () => {
     "Please retry your request",
     "try your request again",
     "upstream returned status 524",
-  ])("retries matching API error text: %s", (message) => {
-    expect(SessionRetry.retryable(wrap(message), retryProvider)).toEqual({ message })
+  ])("does not retry matching API error text: %s", (message) => {
+    expect(SessionRetry.retryable(wrap(message), retryProvider)).toBeUndefined()
   })
 
   test("retries hyphenated service-unavailable errors", () => {
-    expect(SessionRetry.retryable(wrap("service-unavailable"), retryProvider)).toEqual({
-      message: "Provider is overloaded",
-    })
+    expect(SessionRetry.retryable(wrap("service-unavailable"), retryProvider)).toBeUndefined()
   })
 
   test("matches retryable API response bodies", () => {

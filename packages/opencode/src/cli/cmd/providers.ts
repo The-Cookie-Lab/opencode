@@ -17,6 +17,7 @@ import { Process } from "@/util/process"
 import { errorMessage } from "@/util/error"
 import { text } from "node:stream/consumers"
 import { Effect, Option } from "effect"
+import { normalizeTuiSubprocessStdio } from "../tui/stdio"
 
 type PluginAuth = NonNullable<Hooks["auth"]>
 
@@ -331,7 +332,11 @@ export const ProvidersLoginCommand = effectCmd({
       }
       yield* Prompt.log.info(`Running \`${wellknown.auth.command.join(" ")}\``)
       const abort = new AbortController()
-      const proc = Process.spawn(wellknown.auth.command, { stdout: "pipe", stderr: "inherit", abort: abort.signal })
+      const proc = Process.spawn(wellknown.auth.command, {
+        stdout: "pipe",
+        stderr: normalizeTuiSubprocessStdio("inherit"),
+        abort: abort.signal,
+      })
       if (!proc.stdout) {
         yield* Prompt.log.error("Failed")
         yield* Prompt.outro("Done")

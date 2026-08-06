@@ -135,6 +135,11 @@ beforeAll(async () => {
   mock.module("@opencode-ai/ui/toast", () => ({
     Toast: { Region: () => null },
     showToast: () => 0,
+    toaster: {
+      show: () => 0,
+      promise: () => 0,
+      dismiss: () => undefined,
+    },
   }))
 
   mock.module("@opencode-ai/core/util/encode", () => ({

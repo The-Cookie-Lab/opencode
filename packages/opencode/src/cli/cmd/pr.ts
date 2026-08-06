@@ -4,6 +4,7 @@ import { effectCmd, fail } from "../effect-cmd"
 import { Git } from "@/git"
 import { InstanceRef } from "@/effect/instance-ref"
 import { Process } from "@/util/process"
+import { normalizeTuiSubprocessStdio } from "../tui/stdio"
 
 export const PrCommand = effectCmd({
   command: "pr <number>",
@@ -103,8 +104,8 @@ export const PrCommand = effectCmd({
       () =>
         Process.spawn(["opencode", ...opencodeArgs], {
           stdin: "inherit",
-          stdout: "inherit",
-          stderr: "inherit",
+          stdout: normalizeTuiSubprocessStdio("inherit"),
+          stderr: normalizeTuiSubprocessStdio("inherit"),
           cwd: process.cwd(),
         }).exited,
     )

@@ -13,6 +13,7 @@ import { NotFoundError } from "@/storage/storage"
 import { EOL } from "os"
 import path from "path"
 import { which } from "@opencode-ai/core/util/which"
+import { normalizeTuiSubprocessStdio } from "../tui/stdio"
 
 function pagerCmd(): string[] {
   const lessOptions = ["-R", "-S"]
@@ -93,11 +94,11 @@ export const SessionListCommand = effectCmd({
     const shouldPaginate = process.stdout.isTTY && !args.maxCount && args.format === "table"
 
     if (shouldPaginate) {
-      yield* Effect.promise(async () => {
+        yield* Effect.promise(async () => {
         const proc = Process.spawn(pagerCmd(), {
           stdin: "pipe",
-          stdout: "inherit",
-          stderr: "inherit",
+          stdout: normalizeTuiSubprocessStdio("inherit"),
+          stderr: normalizeTuiSubprocessStdio("inherit"),
         })
 
         if (!proc.stdin) {

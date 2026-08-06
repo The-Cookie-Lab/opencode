@@ -1,15 +1,19 @@
-import { Server } from "@/server/server"
-import { InstanceRuntime } from "@/project/instance-runtime"
-import { Rpc } from "@/util/rpc"
-import { upgrade } from "@/cli/upgrade"
-import { Config } from "@/config/config"
-import { GlobalBus } from "@/bus/global"
-import { ServerAuth } from "@/server/auth"
-import { writeHeapSnapshot } from "node:v8"
-import { Heap } from "@/cli/heap"
-import { AppRuntime } from "@/effect/app-runtime"
-import { Effect } from "effect"
-import { disposeAllInstancesAndEmitGlobalDisposed } from "@/server/global-lifecycle"
+import { redirectTuiWorkerIO } from "./stdio"
+
+const restoreTuiWorkerIO = redirectTuiWorkerIO()
+
+const { Server } = await import("@/server/server")
+const { InstanceRuntime } = await import("@/project/instance-runtime")
+const { Rpc } = await import("@/util/rpc")
+const { upgrade } = await import("@/cli/upgrade")
+const { Config } = await import("@/config/config")
+const { GlobalBus } = await import("@/bus/global")
+const { ServerAuth } = await import("@/server/auth")
+const { writeHeapSnapshot } = await import("node:v8")
+const { Heap } = await import("@/cli/heap")
+const { AppRuntime } = await import("@/effect/app-runtime")
+const { Effect } = await import("effect")
+const { disposeAllInstancesAndEmitGlobalDisposed } = await import("@/server/global-lifecycle")
 
 Heap.start()
 
@@ -72,6 +76,7 @@ export const rpc = {
   async shutdown() {
     await InstanceRuntime.disposeAllInstances()
     if (server) await server.stop(true)
+    restoreTuiWorkerIO?.()
     process.off("unhandledRejection", onUnhandledRejection)
     process.off("uncaughtException", onUncaughtException)
   },

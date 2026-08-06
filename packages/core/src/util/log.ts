@@ -24,6 +24,11 @@ const initializedRunID = "OPENCODE_LOG_INITIALIZED_RUN_ID"
 
 let level: Level = "INFO"
 
+function shouldWriteToStream() {
+  return process.env.OPENCODE_PRINT_LOGS === "1"
+}
+let shouldWrite = shouldWriteToStream
+
 function shouldLog(input: Level): boolean {
   return levelPriority[input] >= levelPriority[level]
 }
@@ -59,6 +64,7 @@ export function file() {
   return logpath
 }
 let write = (msg: any) => {
+  if (!shouldWrite()) return msg.length
   process.stderr.write(msg)
   return msg.length
 }
@@ -66,7 +72,12 @@ let write = (msg: any) => {
 export async function init(options: Options) {
   if (options.level) level = options.level
   void cleanup(Global.Path.log)
-  if (options.print) return
+  if (options.print) {
+    shouldWrite = () => true
+    return
+  }
+
+  shouldWrite = () => false
   logpath = path.join(
     Global.Path.log,
     options.dev ? "dev.log" : new Date().toISOString().split(".")[0].replace(/:/g, "") + ".log",

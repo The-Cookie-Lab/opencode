@@ -126,3 +126,210 @@ test("app.exit prints the session epilogue after scoped cleanup", async () => {
     mock.restore()
   }
 })
+
+test("tui renderer captures stdout output when logs are disabled", async () => {
+  const setup = await createTestRenderer({ width: 80, height: 24, useThread: false })
+  const core = await import("@opentui/core")
+  let createRendererOptions: {
+    externalOutputMode?: string
+    screenMode?: string
+  } = {}
+
+  mock.module("@opentui/core", () => ({
+    ...core,
+    createCliRenderer: mock(async (options) => {
+      createRendererOptions = { ...options }
+      return setup.renderer
+    }),
+  }))
+
+  const previousPrintLogs = process.env.OPENCODE_PRINT_LOGS
+  const events = createEventSource()
+  const calls = createFetch()
+  let started!: () => void
+  const ready = new Promise<void>((resolve) => {
+    started = resolve
+  })
+
+  try {
+    delete process.env.OPENCODE_PRINT_LOGS
+
+    const { run } = await import("../src/app")
+    const task = Effect.runPromise(
+      run({
+        url: "http://test",
+        directory,
+        config: createTuiResolvedConfig({ plugin_enabled: {} }),
+        fetch: calls.fetch,
+        events: events.source,
+        args: {},
+        pluginHost: {
+          async start() {
+            started()
+          },
+          async dispose() {},
+        },
+      }).pipe(Effect.provide(AppNodeBuilder.build(Global.node))),
+    )
+
+    await ready
+    expect(createRendererOptions.externalOutputMode).toBe("capture-stdout")
+    expect(createRendererOptions.screenMode).toBe("split-footer")
+
+    process.emit("SIGHUP")
+    await task
+  } finally {
+    if (previousPrintLogs === undefined) {
+      delete process.env.OPENCODE_PRINT_LOGS
+    } else {
+      process.env.OPENCODE_PRINT_LOGS = previousPrintLogs
+    }
+
+    if (!setup.renderer.isDestroyed) setup.renderer.destroy()
+    mock.restore()
+  }
+})
+
+test("tui redirects stderr output to captured stdout when logs are disabled", async () => {
+  const setup = await createTestRenderer({ width: 80, height: 24, useThread: false })
+  const core = await import("@opentui/core")
+  let createRendererOptions: {
+    externalOutputMode?: string
+    screenMode?: string
+  } = {}
+
+  mock.module("@opentui/core", () => ({
+    ...core,
+    createCliRenderer: mock(async (options) => {
+      createRendererOptions = { ...options }
+      return setup.renderer
+    }),
+  }))
+
+  const previousPrintLogs = process.env.OPENCODE_PRINT_LOGS
+  const originalStdoutWrite = process.stdout.write
+  const originalStderrWrite = process.stderr.write
+  let stdout = ""
+  let stderr = ""
+  process.stdout.write = ((chunk: string | Uint8Array) => {
+    stdout += String(chunk)
+    return true
+  }) as typeof process.stdout.write
+  process.stderr.write = ((chunk: string | Uint8Array) => {
+    stderr += String(chunk)
+    return true
+  }) as typeof process.stderr.write
+
+  const events = createEventSource()
+  const calls = createFetch()
+  let started!: () => void
+  const ready = new Promise<void>((resolve) => {
+    started = resolve
+  })
+
+  try {
+    delete process.env.OPENCODE_PRINT_LOGS
+
+    const { run } = await import("../src/app")
+    const task = Effect.runPromise(
+      run({
+        url: "http://test",
+        directory,
+        config: createTuiResolvedConfig({ plugin_enabled: {} }),
+        fetch: calls.fetch,
+        events: events.source,
+        args: {},
+        pluginHost: {
+          async start() {
+            started()
+          },
+          async dispose() {},
+        },
+      }).pipe(Effect.provide(AppNodeBuilder.build(Global.node))),
+    )
+
+    await ready
+    expect(createRendererOptions.externalOutputMode).toBe("capture-stdout")
+    expect(createRendererOptions.screenMode).toBe("split-footer")
+    process.stderr.write("legacy stderr")
+    expect(stdout).toContain("legacy stderr")
+    expect(stderr).toBe("")
+
+    process.emit("SIGHUP")
+    await task
+  } finally {
+    process.stdout.write = originalStdoutWrite
+    process.stderr.write = originalStderrWrite
+    if (previousPrintLogs === undefined) {
+      delete process.env.OPENCODE_PRINT_LOGS
+    } else {
+      process.env.OPENCODE_PRINT_LOGS = previousPrintLogs
+    }
+
+    if (!setup.renderer.isDestroyed) setup.renderer.destroy()
+    mock.restore()
+  }
+})
+
+test("tui renderer uses passthrough output when logs are enabled", async () => {
+  const setup = await createTestRenderer({ width: 80, height: 24, useThread: false })
+  const core = await import("@opentui/core")
+  let createRendererOptions: {
+    externalOutputMode?: string
+    screenMode?: string
+  } = {}
+
+  mock.module("@opentui/core", () => ({
+    ...core,
+    createCliRenderer: mock(async (options) => {
+      createRendererOptions = { ...options }
+      return setup.renderer
+    }),
+  }))
+
+  const previousPrintLogs = process.env.OPENCODE_PRINT_LOGS
+  const events = createEventSource()
+  const calls = createFetch()
+  let started!: () => void
+  const ready = new Promise<void>((resolve) => {
+    started = resolve
+  })
+
+  try {
+    process.env.OPENCODE_PRINT_LOGS = "1"
+
+    const { run } = await import("../src/app")
+    const task = Effect.runPromise(
+      run({
+        url: "http://test",
+        directory,
+        config: createTuiResolvedConfig({ plugin_enabled: {} }),
+        fetch: calls.fetch,
+        events: events.source,
+        args: {},
+        pluginHost: {
+          async start() {
+            started()
+          },
+          async dispose() {},
+        },
+      }).pipe(Effect.provide(AppNodeBuilder.build(Global.node))),
+    )
+
+    await ready
+    expect(createRendererOptions.externalOutputMode).toBe("passthrough")
+    expect(createRendererOptions.screenMode).toBeUndefined()
+
+    process.emit("SIGHUP")
+    await task
+  } finally {
+    if (previousPrintLogs === undefined) {
+      delete process.env.OPENCODE_PRINT_LOGS
+    } else {
+      process.env.OPENCODE_PRINT_LOGS = previousPrintLogs
+    }
+
+    if (!setup.renderer.isDestroyed) setup.renderer.destroy()
+    mock.restore()
+  }
+})

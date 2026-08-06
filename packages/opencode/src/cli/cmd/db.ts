@@ -4,6 +4,7 @@ import { Database } from "@opencode-ai/core/database/database"
 import { Effect } from "effect"
 import { sql } from "drizzle-orm"
 import { effectCmd } from "../effect-cmd"
+import { normalizeTuiSubprocessStdio } from "../tui/stdio"
 
 const QueryCommand = effectCmd({
   command: "$0 [query]",
@@ -36,7 +37,7 @@ const QueryCommand = effectCmd({
       return
     }
     const child = spawn("sqlite3", [Database.path()], {
-      stdio: "inherit",
+      stdio: normalizeTuiSubprocessStdio("inherit"),
     })
     yield* Effect.promise(() => new Promise((resolve) => child.on("close", resolve)))
   }),

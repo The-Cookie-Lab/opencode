@@ -3,6 +3,7 @@ import { UI } from "@/cli/ui"
 import { errorMessage } from "@opencode-ai/tui/util/error"
 import { validateSession } from "../tui/validate-session"
 import { ServerAuth } from "@/server/auth"
+import { OPENCODE_TUI, redirectTuiWorkerIO } from "../tui/stdio"
 
 export const AttachCommand = cmd({
   command: "attach <url>",
@@ -60,6 +61,7 @@ export const AttachCommand = cmd({
         describe: "cap visible mini replay to the newest N messages",
       }),
   handler: async (args) => {
+    process.env[OPENCODE_TUI] = "1"
     if (args.replay === true) {
       UI.error("--replay is not supported; replay is enabled by default")
       process.exitCode = 1
@@ -94,55 +96,60 @@ export const AttachCommand = cmd({
       return
     }
 
-    const unsupported = [
-      ["--no-replay", noReplay],
-      ["--replay-limit", args.replayLimit !== undefined],
-    ].find((entry) => entry[1])?.[0]
-    if (unsupported) {
-      UI.error(`${unsupported} requires --mini`)
-      process.exitCode = 1
-      return
-    }
-
-    const { TuiConfig } = await import("@/config/tui")
-    if (args.fork && !args.continue && !args.session) {
-      UI.error("--fork requires --continue or --session")
-      process.exitCode = 1
-      return
-    }
-
-    const headers = ServerAuth.headers({ password: args.password, username: args.username })
-    const config = await TuiConfig.get()
-
+    const restoreTuiIO = redirectTuiWorkerIO()
     try {
-      await validateSession({
-        url: args.url,
-        sessionID: args.session,
-        directory,
-        headers,
-      })
-    } catch (error) {
-      UI.error(errorMessage(error))
-      process.exitCode = 1
-      return
-    }
+      const unsupported = [
+        ["--no-replay", noReplay],
+        ["--replay-limit", args.replayLimit !== undefined],
+      ].find((entry) => entry[1])?.[0]
+      if (unsupported) {
+        UI.error(`${unsupported} requires --mini`)
+        process.exitCode = 1
+        return
+      }
 
-    const { Effect } = await import("effect")
-    const { run } = await import("../tui/layer")
-    const { createLegacyTuiPluginHost } = await import("@/plugin/tui/runtime")
-    await Effect.runPromise(
-      run({
-        url: args.url,
-        config,
-        pluginHost: createLegacyTuiPluginHost(),
-        args: {
-          continue: args.continue,
+      const { TuiConfig } = await import("@/config/tui")
+      if (args.fork && !args.continue && !args.session) {
+        UI.error("--fork requires --continue or --session")
+        process.exitCode = 1
+        return
+      }
+
+      const headers = ServerAuth.headers({ password: args.password, username: args.username })
+      const config = await TuiConfig.get()
+
+      try {
+        await validateSession({
+          url: args.url,
           sessionID: args.session,
-          fork: args.fork,
-        },
-        directory,
-        headers,
-      }),
-    )
+          directory,
+          headers,
+        })
+      } catch (error) {
+        UI.error(errorMessage(error))
+        process.exitCode = 1
+        return
+      }
+
+      const { Effect } = await import("effect")
+      const { run } = await import("../tui/layer")
+      const { createLegacyTuiPluginHost } = await import("@/plugin/tui/runtime")
+      await Effect.runPromise(
+        run({
+          url: args.url,
+          config,
+          pluginHost: createLegacyTuiPluginHost(),
+          args: {
+            continue: args.continue,
+            sessionID: args.session,
+            fork: args.fork,
+          },
+          directory,
+          headers,
+        }),
+      )
+    } finally {
+      restoreTuiIO?.()
+    }
   },
 })

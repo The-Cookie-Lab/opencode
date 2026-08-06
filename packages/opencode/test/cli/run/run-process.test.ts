@@ -27,6 +27,15 @@ describe("opencode run (non-interactive subprocess)", () => {
     60_000,
   )
 
+  runIt("reports mini tty requirements on stderr", ({ opencode }) =>
+    Effect.gen(function* () {
+      const result = yield* opencode.spawn(["--mini"])
+      opencode.expectExit(result, 1)
+      expect(result.stdout + result.stderr).toContain("--mini requires a TTY stdout")
+    }),
+    30_000,
+  )
+
   runIt(
     "prints each completed text part in order around a tool continuation",
     ({ llm, opencode }) =>
