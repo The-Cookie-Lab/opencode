@@ -37,6 +37,7 @@ interface LifecycleServerState {
   resourceTemplatePages?: Record<string, Page<{ name: string; uriTemplate: string; description?: string }>>
   listToolsError?: string
   requestDelay?: number
+  malformedPrompt?: boolean
   roots?: Array<{ uri: string; name?: string }>
   requests: string[]
   aborted: number
@@ -79,6 +80,7 @@ function lifecycleServer(input?: { capabilities?: ServerCapabilities; instructio
           })
           protocol.setRequestHandler(GetPromptRequestSchema, async () => {
             if (state.requestDelay) await Bun.sleep(state.requestDelay)
+            if (state.malformedPrompt) return {}
             return { messages: [{ role: "user", content: { type: "text", text: "prompt result" } }] }
           })
         }
@@ -430,6 +432,20 @@ it.instance("uses per-server timeouts for prompt and resource requests", () =>
 
     expect(yield* mcp.getPrompt("timeout-server", "test")).toBeUndefined()
     expect(yield* mcp.readResource("timeout-server", "test://resource")).toBeUndefined()
+  }),
+)
+
+it.instance("classifies malformed prompt responses instead of failing the request", () =>
+  Effect.gen(function* () {
+    const server = yield* lifecycleServer()
+    server.state.prompts = [{ name: "my-prompt", description: "A test prompt" }]
+    server.state.malformedPrompt = true
+    const mcp = yield* MCP.Service
+    yield* mcp.add("malformed-server", remote(server.url))
+
+    expect(MCP.isMalformedMcpResponse(new Error("boom"))).toBe(false)
+    expect(MCP.isMalformedMcpResponse(Object.assign(new Error("invalid input"), { name: "ZodError" }))).toBe(true)
+    expect(yield* mcp.getPrompt("malformed-server", "my-prompt")).toBeUndefined()
   }),
 )
 

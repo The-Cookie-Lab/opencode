@@ -49,6 +49,10 @@ const CLIENT_OPTIONS = {
   },
 } satisfies ClientOptions
 
+export function isMalformedMcpResponse(error: unknown): boolean {
+  return typeof error === "object" && error !== null && (error as { name?: unknown }).name === "ZodError"
+}
+
 export const Resource = Schema.Struct({
   name: Schema.String,
   uri: Schema.String,
@@ -754,13 +758,17 @@ const layer = Layer.effect(
         try: () => fn(client, requestTimeout(s, clientName, cfg.mcp?.[clientName], cfg.experimental?.mcp_timeout)),
         catch: (error) => error,
       }).pipe(
-        Effect.tapError((error) =>
-          Effect.logError(`failed to ${label}`, {
+        Effect.tapError((error) => {
+          const fields = {
             clientName,
             ...meta,
             error: error instanceof Error ? error.message : String(error),
-          }),
-        ),
+          }
+          if (isMalformedMcpResponse(error)) {
+            return Effect.logWarning(`MCP server returned a malformed ${label} response`, fields)
+          }
+          return Effect.logError(`failed to ${label}`, fields)
+        }),
         Effect.orElseSucceed(() => undefined),
       )
     })
