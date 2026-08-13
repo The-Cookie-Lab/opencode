@@ -6,6 +6,7 @@ import path from "node:path"
 import {
   parseAlwaysLoaded,
   parseRouteTable,
+  resolveDeclaredRoutePath,
   resolveSourcesDetailed,
   routeApplies,
 } from "../src/resolve-sources"
@@ -33,6 +34,51 @@ describe("resolve-sources v2 routing", () => {
     expect(routeApplies({ file: "PULL_REQUESTS.md" }, "run ci checks")).toBe(true)
     expect(routeApplies({ file: "PULL_REQUESTS.md" }, "circular dependency")).toBe(false)
     expect(routeApplies({ file: "MACOS_CODEX_ENV.md" }, "configure launchctl")).toBe(true)
+  })
+  test("uses the shared classifier for unknown routes and rejects unsafe declarations", () => {
+    expect(routeApplies({ file: "TEAM_NOTES.md", usage_context: "documentation", holds: "guide" }, "update docs")).toBe(
+      true,
+    )
+    expect(routeApplies({ file: "TEAM_NOTES.md", usage_context: "SDL / indexed", holds: "SDL policy" }, "indexed SDL")).toBe(
+      false,
+    )
+    expect(resolveDeclaredRoutePath("/tmp/codex", "PULL_REQUESTS.md")).toBe("/tmp/codex/PULL_REQUESTS.md")
+    expect(resolveDeclaredRoutePath("/tmp/codex", "../PULL_REQUESTS.md")).toBe(null)
+    expect(resolveDeclaredRoutePath("/tmp/codex", "/tmp/outside/PULL_REQUESTS.md")).toBe(null)
+    expect(resolveDeclaredRoutePath("/tmp/codex", "notes.txt")).toBe(null)
+  })
+
+  test("orders global sources, shallow repo instructions, then repo overrides", () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "cookielayer-order-"))
+    try {
+      const codexHome = path.join(root, "codex")
+      const repo = path.join(root, "repo")
+      const nested = path.join(repo, "nested")
+      fs.mkdirSync(codexHome, { recursive: true })
+      fs.mkdirSync(nested, { recursive: true })
+      expect(spawnSync("git", ["init"], { cwd: repo, encoding: "utf-8" }).status).toBe(0)
+      const resolvedRepo = fs.realpathSync(repo)
+      fs.writeFileSync(path.join(codexHome, "AGENTS.md"), "global agents")
+      fs.writeFileSync(path.join(repo, "AGENTS.md"), "root repo agents")
+      fs.writeFileSync(path.join(nested, "AGENTS.md"), "nested repo agents")
+      fs.writeFileSync(path.join(repo, "GIT_WORKTREES.md"), "git override")
+
+      const result = resolveSourcesDetailed({
+        cwd: nested,
+        prompt: "implement the branch change",
+        codexHome,
+        useCodexRouting: true,
+      })
+
+      expect(result.sources.map((source) => source.filepath)).toEqual([
+        path.join(codexHome, "AGENTS.md"),
+        path.join(resolvedRepo, "AGENTS.md"),
+        path.join(resolvedRepo, "nested", "AGENTS.md"),
+        path.join(resolvedRepo, "GIT_WORKTREES.md"),
+      ])
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true })
+    }
   })
 
   test("resolves always-loaded and routed files from codex home", () => {

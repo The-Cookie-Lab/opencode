@@ -45,7 +45,16 @@ Output:
 }
 ```
 
-`resolve-sources` v2 ports Codex always-loaded / context-routed file selection into this package. Codex curated mode calls the CLI without shipping file bodies from Python.
+`resolve-sources` v2 ports Codex always-loaded and context-routed file selection into this package. It resolves selected route files before rendering; OMP delegates the selected bodies to this shared renderer without sending instruction bodies through a model-server asset path.
+
+OMP prompt curation transforms exactly one later, line-delimited native
+`<repo-rules>` block. It preserves system-prompt block 0 and every suffix
+block, parses exact `<file>` children, applies bounded `$CODEX_HOME` route
+resolution, and fails open for malformed or ambiguous regions. Recuration is
+idempotent. The branch `cat-instruction-profile` custom entry carries a
+complete task-domain snapshot; model-facing output omits source paths and
+telemetry, while the owner-side event retains only hashes, counts, lengths,
+and safe domains.
 
 ## Client adapters
 
@@ -54,10 +63,12 @@ Output:
 | OpenCode | Build-integrated mirror with `.cat-source.json` hash/parity guard |
 | Cursor | CAT Python adapter; curated mode invokes this packaged CLI directly |
 | Codex | CAT lifecycle adapter; curated mode invokes this packaged CLI directly |
+| OMP | `before_agent_start` adapter; curated prompt replacement is default-on |
 
-The compatibility renderer remains the default until the planned instruction
-correctness review. Setting `CAT_INSTRUCTION_MODE=curated` selects the shared
-CLI without returning ownership to model-server.
+`CAT_INSTRUCTION_MODE=curated` selects the shared CLI for adapters that expose
+that switch. OMP uses `CAT_OMP_INSTRUCTION_MODE=curated` by default; setting
+`CAT_OMP_INSTRUCTION_MODE=native` leaves the native prompt unchanged as the
+explicit rollback.
 
 ## Client sync
 
