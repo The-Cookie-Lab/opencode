@@ -11,8 +11,8 @@ import { Flag } from "@opencode-ai/core/flag/flag"
 import { FSUtil } from "@opencode-ai/core/fs-util"
 import { withTransientReadRetry } from "@/util/effect-http-client"
 import { Global } from "@opencode-ai/core/global"
-import type { MessageV2 } from "./message-v2"
 import type { MessageID } from "./schema"
+import type { Rendered } from "@cookielab/instruction"
 import { InstructionRenderer } from "@cookielab/instruction"
 
 function extract(messages: SessionV1.WithParts[]) {
@@ -32,10 +32,15 @@ function extract(messages: SessionV1.WithParts[]) {
   return paths
 }
 
+export interface InstructionResult {
+  readonly blocks: Rendered["blocks"]
+  readonly telemetry: Rendered["telemetry"]
+}
+
 export interface Interface {
   readonly clear: (messageID: MessageID) => Effect.Effect<void>
   readonly systemPaths: () => Effect.Effect<Set<string>, FSUtil.Error>
-  readonly system: (options?: { prompt?: string }) => Effect.Effect<string[], FSUtil.Error>
+  readonly system: (options?: { prompt?: string }) => Effect.Effect<InstructionResult, FSUtil.Error>
   readonly find: (dir: string) => Effect.Effect<string | undefined, FSUtil.Error>
   readonly resolve: (
     messages: SessionV1.WithParts[],
@@ -185,10 +190,14 @@ const layer: Layer.Layer<
         ...urls.map((filepath, i) => ({ filepath, content: remote[i] ?? "", order: pathList.length + i })),
       ].filter((source) => source.content)
 
-      return InstructionRenderer.render(sources, {
+      const rendered = InstructionRenderer.render(sources, {
         mode: flags.agentInstructionMode,
         prompt: options?.prompt,
-      }).blocks
+      })
+      return {
+        blocks: rendered.blocks,
+        telemetry: rendered.telemetry,
+      }
     })
 
     const find = Effect.fn("Instruction.find")(function* (dir: string) {

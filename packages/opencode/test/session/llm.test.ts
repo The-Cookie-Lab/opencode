@@ -872,6 +872,23 @@ describe("session.llm.stream", () => {
           model: resolved,
           agent,
           system: ["First instruction.", "Second instruction."],
+          agentInstructionTelemetry: {
+            event: "agent_instruction_injection",
+            mode: "curated",
+            taskDomains: ["opencode"],
+            sourcePaths: ["/repo/AGENTS.md"],
+            selectedIds: ["TEST.RULE"],
+            omittedIds: [],
+            selectedCount: 1,
+            omittedCount: 0,
+            omittedDomains: {},
+            rawTokensEstimate: 10,
+            curatedTokensEstimate: 5,
+            savingsRatio: 0.5,
+            sameIdOverrides: 0,
+            replacementSuppressions: 0,
+            injectionHash: "test-hash",
+          },
           messages: [{ role: "user", content: "Hello" }],
           tools: {},
         })
@@ -882,7 +899,13 @@ describe("session.llm.stream", () => {
           role: string
           content: string
           _opencode_agent_instruction_spans?: unknown[]
+          _opencode_agent_instruction_telemetry?: Record<string, unknown>
         }
+        expect(system._opencode_agent_instruction_telemetry).toMatchObject({
+          event: "agent_instruction_injection",
+          injectionHash: "test-hash",
+          selectedIds: ["TEST.RULE"],
+        })
         expect(system.role).toBe("system")
         const codePointIndex = (needle: string) =>
           Array.from(system.content.slice(0, system.content.indexOf(needle))).length

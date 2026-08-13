@@ -170,7 +170,7 @@ describe("structured instruction curation", () => {
 
     expect(
       InstructionRouter.route(reconciled.entries, "add unit test coverage").selected.map((entry) => entry.id),
-    ).toEqual(["VER.RULE.TESTS"])
+    ).toEqual(["VER.RULE.TESTS", "GIT.RULE.WORKTREE"])
     expect(
       InstructionRouter.route(reconciled.entries, "prepare a PR review closeout").selected.map((entry) => entry.id),
     ).toEqual(["PR.RULE.REVIEW"])
@@ -216,7 +216,7 @@ describe("structured instruction curation", () => {
     expect(curated.blocks).toHaveLength(1)
     expect(curated.blocks[0]).toContain("[VER.RULE.TESTS]")
     expect(curated.blocks[0]).not.toContain("[PR.RULE.REVIEW]")
-    expect(curated.blocks[0]).toContain("<agent-instruction-telemetry>")
+    expect(curated.blocks[0]).not.toContain("<agent-instruction-telemetry>")
     expect(curated.telemetry?.omittedIds).toEqual(["PR.RULE.REVIEW"])
   })
 })
@@ -331,10 +331,10 @@ describe("Instruction.system", () => {
         expect(paths.has(path.join(projectTmp, "AGENTS.md"))).toBe(true)
         expect(paths.has(path.join(globalTmp, "AGENTS.md"))).toBe(true)
 
-        const rules = yield* svc.system()
-        expect(rules).toHaveLength(2)
-        expect(rules[0]).toBe(`Instructions from: ${path.join(globalTmp, "AGENTS.md")}\n# Global Instructions`)
-        expect(rules[1]).toBe(`Instructions from: ${path.join(projectTmp, "AGENTS.md")}\n# Project Instructions`)
+        const result = yield* svc.system()
+        expect(result.blocks).toHaveLength(2)
+        expect(result.blocks[0]).toBe(`Instructions from: ${path.join(globalTmp, "AGENTS.md")}\n# Global Instructions`)
+        expect(result.blocks[1]).toBe(`Instructions from: ${path.join(projectTmp, "AGENTS.md")}\n# Project Instructions`)
       }).pipe(provideInstance(projectTmp), provideInstruction({ home: globalTmp, config: globalTmp }))
     }),
   )
@@ -360,10 +360,10 @@ describe("Instruction.system", () => {
           path.join(projectTmp, "pkg", "nested", "AGENTS.md"),
         ])
 
-        const rules = yield* svc.system()
-        expect(rules).toHaveLength(3)
-        expect(rules[1]).toContain("Package Agents")
-        expect(rules.join("\n")).not.toContain("Package Claude")
+        const result = yield* svc.system()
+        expect(result.blocks).toHaveLength(3)
+        expect(result.blocks[1]).toContain("Package Agents")
+        expect(result.blocks.join("\n")).not.toContain("Package Claude")
       }).pipe(provideInstance(nested), provideInstruction({ home: globalTmp, config: globalTmp }))
     }),
   )
@@ -378,7 +378,7 @@ describe("Instruction.system", () => {
         const paths = yield* svc.systemPaths()
         expect(paths.has(path.join(globalTmp, ".claude", "CLAUDE.md"))).toBe(false)
         expect(paths.has(path.join(projectTmp, "CLAUDE.md"))).toBe(false)
-        expect(yield* svc.system()).toEqual([])
+        expect((yield* svc.system()).blocks).toEqual([])
       }).pipe(
         provideInstance(projectTmp),
         provideInstruction({ home: globalTmp, config: globalTmp }, { disableClaudeCodePrompt: true }),

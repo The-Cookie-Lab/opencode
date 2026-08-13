@@ -1,4 +1,5 @@
 import { PermissionV1 } from "@opencode-ai/core/v1/permission"
+import type { JSONObject } from "@ai-sdk/provider"
 import type { Auth } from "@/auth"
 import { SessionV1 } from "@opencode-ai/core/v1/session"
 import type { RuntimeFlags } from "@/effect/runtime-flags"
@@ -14,10 +15,11 @@ import { Effect, Record } from "effect"
 import { jsonSchema, tool as aiTool, type ModelMessage, type Tool } from "ai"
 import type { Plugin } from "@/plugin"
 import { mergeDeep } from "remeda"
+import type { Telemetry } from "@cookielab/instruction"
 
 const USER_AGENT = `opencode/${InstallationVersion}`
 const AGENT_INSTRUCTION_SPANS_FIELD = "_opencode_agent_instruction_spans"
-
+const AGENT_INSTRUCTION_TELEMETRY_FIELD = "_opencode_agent_instruction_telemetry"
 type AgentInstructionSpan = {
   readonly start: number
   readonly end: number
@@ -31,6 +33,7 @@ type PrepareInput = {
   readonly agent: Agent.Info
   readonly permission?: PermissionV1.Ruleset
   readonly system: string[]
+  readonly agentInstructionTelemetry?: Telemetry
   readonly messages: ModelMessage[]
   readonly small?: boolean
   readonly tools: Record<string, Tool>
@@ -127,6 +130,11 @@ export const prepare = Effect.fn("LLMRequestPrep.prepare")(function* (input: Pre
                 ? {
                     openaiCompatible: {
                       [AGENT_INSTRUCTION_SPANS_FIELD]: agentInstructionSpans,
+                      ...(input.agentInstructionTelemetry
+                        ? {
+                            [AGENT_INSTRUCTION_TELEMETRY_FIELD]: input.agentInstructionTelemetry as unknown as JSONObject,
+                          }
+                        : {}),
                     },
                   }
                 : undefined
