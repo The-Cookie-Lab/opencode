@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto"
-import { parse, type Entry, type Source } from "./parser"
+import { parse, type Entry, type InstructionDomain, type Source } from "./parser"
 import { reconcile } from "./reconciler"
 import { countDomains, route } from "./router"
 
@@ -8,6 +8,8 @@ export type Mode = "raw" | "curated"
 export interface RenderOptions {
   readonly mode: Mode
   readonly prompt?: string
+  readonly taskDomains?: readonly InstructionDomain[]
+  readonly excludedHeadings?: readonly string[]
 }
 
 export interface Rendered {
@@ -22,6 +24,8 @@ export interface Telemetry {
   readonly sourcePaths: string[]
   readonly selectedIds: string[]
   readonly omittedIds: string[]
+  readonly selectedCount: number
+  readonly omittedCount: number
   readonly omittedDomains: Record<string, number>
   readonly rawTokensEstimate: number
   readonly curatedTokensEstimate: number
@@ -45,14 +49,53 @@ function rawBlocks(sources: Source[]) {
   )
 }
 
-function compactEntry(entry: Entry) {
-  const source = `source=${entry.filepath}${entry.heading ? ` heading=${JSON.stringify(entry.heading)}` : ""}`
-  if (entry.id) return `- [${entry.id}] ${entry.text.replace(/\s+/g, " ")} (${source})`
-  return [`From ${entry.filepath}${entry.heading ? ` (${entry.heading})` : ""}:`, entry.text].join("\n")
+function escapeRegExp(value: string) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
 }
 
-function telemetryBlock(telemetry: Telemetry) {
-  return `<agent-instruction-telemetry>${JSON.stringify(telemetry)}</agent-instruction-telemetry>`
+function normalizedHeading(value: string) {
+  return value.replace(/^#+\s*/, "").trim().toLowerCase()
+}
+
+function compactStructuredEntry(entry: Entry) {
+  let body = entry.text.trim().replace(/^\s*[-*+]\s+/, "").trimStart()
+  if (entry.id) {
+    const markers = [entry.id, `\`${entry.id}\``, `**${entry.id}**`]
+    const marker = markers.find((candidate) => body.startsWith(candidate))
+    if (marker) {
+      body = body.slice(marker.length).replace(/^\s*[:.\-–—]\s*/, "")
+    } else {
+      const duplicate = new RegExp(`^${escapeRegExp(entry.id)}\\b\\s*[:.\\-–—]?\\s*`)
+      body = body.replace(duplicate, "")
+    }
+    return `[${entry.id}]${body ? ` ${body}` : ""}`
+  }
+  return body
+}
+
+function compactEntries(entries: Entry[]) {
+  const rendered: string[] = []
+  const emittedHeadings = new Set<string>()
+  for (const entry of entries) {
+    if (entry.structured) {
+      rendered.push(compactStructuredEntry(entry))
+      continue
+    }
+    if (entry.heading) {
+      const headingKey = `${entry.filepath}\u0000${entry.heading}`
+      if (!emittedHeadings.has(headingKey)) {
+        emittedHeadings.add(headingKey)
+        rendered.push(`## ${entry.heading}`)
+      }
+    }
+    rendered.push(entry.text)
+  }
+  return rendered
+}
+
+function selectedEntries(entries: Entry[], excludedHeadings: readonly string[]) {
+  const excluded = new Set(excludedHeadings.map(normalizedHeading))
+  return entries.filter((entry) => !entry.heading || !excluded.has(normalizedHeading(entry.heading)))
 }
 
 export function render(sources: Source[], options: RenderOptions): Rendered {
@@ -60,23 +103,24 @@ export function render(sources: Source[], options: RenderOptions): Rendered {
 
   const parsed = parse(sources)
   const reconciled = reconcile(parsed.entries)
-  const routed = route(reconciled.entries, options.prompt)
-
-  const body = [
-    '<agent-instructions mode="curated">',
-    "Precedence: broad-to-narrow AGENTS guidance, with same-ID narrower entries replacing broader entries.",
-    ...routed.selected.map(compactEntry),
-  ]
-  const omittedDomains = countDomains(routed.omitted)
-  if (routed.omitted.length > 0) {
-    body.push(`Omitted routed domains: ${JSON.stringify(omittedDomains)}`)
-  }
-  body.push("</agent-instructions>")
-
+  const routed = route(reconciled.entries, options.prompt, options.taskDomains)
+  const selected = selectedEntries(routed.selected, options.excludedHeadings ?? [])
+  const excluded = routed.selected.filter((entry) => !selected.includes(entry))
+  const omitted = [...routed.omitted, ...excluded]
+  const lines = compactEntries(selected)
+  const curatedWithoutTelemetry =
+    selected.length === 0
+      ? ""
+      : [
+          '<agent-instructions mode="curated">',
+          "Precedence: broad-to-narrow AGENTS guidance, with same-ID narrower entries replacing broader entries.",
+          ...lines,
+          "</agent-instructions>",
+        ].join("\n")
   const rawText = rawBlocks(sources).join("\n\n")
-  const curatedWithoutTelemetry = body.join("\n")
-  const selectedIds = routed.selected.flatMap((entry) => (entry.id ? [entry.id] : []))
-  const omittedIds = routed.omitted.flatMap((entry) => (entry.id ? [entry.id] : []))
+  const selectedIds = selected.flatMap((entry) => (entry.id ? [entry.id] : []))
+  const omittedIds = omitted.flatMap((entry) => (entry.id ? [entry.id] : []))
+  const omittedDomains = countDomains(omitted)
   const rawTokensEstimate = estimateTokens(rawText)
   const curatedTokensEstimate = estimateTokens(curatedWithoutTelemetry)
   const savingsRatio =
@@ -88,6 +132,8 @@ export function render(sources: Source[], options: RenderOptions): Rendered {
     sourcePaths: sources.map((source) => source.filepath),
     selectedIds,
     omittedIds,
+    selectedCount: selected.length,
+    omittedCount: omitted.length,
     omittedDomains: omittedDomains as Record<string, number>,
     rawTokensEstimate,
     curatedTokensEstimate,
@@ -97,5 +143,5 @@ export function render(sources: Source[], options: RenderOptions): Rendered {
     injectionHash: hash(curatedWithoutTelemetry),
   }
 
-  return { blocks: [[curatedWithoutTelemetry, telemetryBlock(telemetry)].join("\n")], telemetry }
+  return { blocks: curatedWithoutTelemetry ? [curatedWithoutTelemetry] : [], telemetry }
 }

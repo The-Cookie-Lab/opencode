@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto"
-import type { Source } from "./parser"
+import type { InstructionDomain, Source } from "./parser"
 import { render, type Mode, type Telemetry } from "./renderer"
 
 export interface SessionSource {
@@ -80,11 +80,18 @@ export function renderWithDelta(options: {
   readonly sources: readonly Source[]
   readonly mode?: Mode
   readonly prompt?: string
+  readonly taskDomains?: readonly InstructionDomain[]
+  readonly excludedHeadings?: readonly string[]
   readonly previous?: SessionProfile | null
   readonly delta?: boolean
 }): DeltaRenderResult {
   const mode = options.mode ?? "curated"
-  const rendered = render([...options.sources], { mode, prompt: options.prompt })
+  const rendered = render([...options.sources], {
+    mode,
+    prompt: options.prompt,
+    taskDomains: options.taskDomains,
+    excludedHeadings: options.excludedHeadings,
+  })
   const sessionSources = sourcesToSession(options.sources)
   const selectedIds = rendered.telemetry?.selectedIds ?? []
   const currentHash = profileHash(sessionSources, selectedIds)

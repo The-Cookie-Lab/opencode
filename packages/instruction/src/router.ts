@@ -7,7 +7,7 @@ export interface Routed {
 }
 
 const TASK_KEYWORDS: Array<[InstructionDomain, RegExp]> = [
-  ["pr", /\b(pull request|pr\b|review|merge|github comment|review thread|closeout)\b/i],
+  ["pr", /\b(pull request|pr\b|review|merge|github comment|review thread|closeout|ci|checks)\b/i],
   ["git", /\b(git|worktree|branch|commit|push|checkout|dirty|default branch)\b/i],
   ["test", /\b(test|tests|unit|coverage|build|typecheck|lint|smoke|gate|verification)\b/i],
   ["prd", /\b(linear|prd|ticket|issue)\b/i],
@@ -19,10 +19,20 @@ const TASK_KEYWORDS: Array<[InstructionDomain, RegExp]> = [
   ["docs", /\b(doc|docs|guide|readme|documentation)\b/i],
 ]
 
-function uniqueDomains(domains: InstructionDomain[]) {
+const DEVELOPMENT_INTENT = /\b(implement|fix|add|remove|rename|refactor|migrate|update|change|configure|wire|develop|deliver|ship)\b/i
+
+function uniqueDomains(domains: Iterable<InstructionDomain>) {
   const seen = new Set<InstructionDomain>()
   for (const domain of domains) seen.add(domain)
   return Array.from(seen)
+}
+
+export function normalizeTaskDomains(domains: readonly InstructionDomain[] | undefined): InstructionDomain[] {
+  return uniqueDomains(domains ?? [])
+}
+
+export function hasDevelopmentIntent(prompt: string | undefined) {
+  return Boolean(prompt?.trim() && DEVELOPMENT_INTENT.test(prompt))
 }
 
 export function classifyTask(prompt: string | undefined): InstructionDomain[] {
@@ -31,19 +41,23 @@ export function classifyTask(prompt: string | undefined): InstructionDomain[] {
   for (const [domain, pattern] of TASK_KEYWORDS) {
     if (pattern.test(prompt)) domains.push(domain)
   }
+  if (hasDevelopmentIntent(prompt)) domains.push("git", "test", "docs")
   return uniqueDomains(domains)
 }
 
-export function route(entries: Entry[], prompt?: string): Routed {
-  const taskDomains = classifyTask(prompt)
-  if (taskDomains.length === 0) return { selected: entries, omitted: [], taskDomains }
-
+export function route(
+  entries: Entry[],
+  prompt?: string,
+  explicitTaskDomains?: readonly InstructionDomain[],
+): Routed {
+  const taskDomains = explicitTaskDomains === undefined ? classifyTask(prompt) : normalizeTaskDomains(explicitTaskDomains)
   const task = new Set(taskDomains)
   const selected: Entry[] = []
   const omitted: Entry[] = []
 
   for (const entry of entries) {
-    if (entry.domains.includes("always") || entry.domains.some((domain) => task.has(domain))) {
+    const always = entry.domains.includes("always") || entry.id?.startsWith("USR.") === true
+    if (always || entry.domains.some((domain) => task.has(domain))) {
       selected.push(entry)
     } else {
       omitted.push(entry)

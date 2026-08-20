@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test"
 import { parse } from "../src/parser"
 import { reconcile } from "../src/reconciler"
-import { route } from "../src/router"
+import { route, hasDevelopmentIntent } from "../src/router"
 import { render } from "../src/renderer"
 import {
   applyManagedCursorignoreBlock,
@@ -53,8 +53,84 @@ describe("structured instruction curation", () => {
     expect(curated.blocks).toHaveLength(1)
     expect(curated.blocks[0]).toContain("[VER.RULE.TESTS]")
     expect(curated.blocks[0]).not.toContain("[PR.RULE.REVIEW]")
-    expect(curated.blocks[0]).toContain("<agent-instruction-telemetry>")
+    expect(curated.blocks[0]).not.toContain("<agent-instruction-telemetry>")
     expect(curated.telemetry?.omittedIds).toEqual(["PR.RULE.REVIEW"])
+  })
+  test("selects always entries plus development domains without model metadata", () => {
+    const sources = [
+      {
+        filepath: "/repo/AGENTS.md",
+        order: 0,
+        content: [
+          "- `USR.RULE.ALWAYS`: Preserve this rule.",
+          "- `GIT.RULE.BRANCH`: Use the repository branch.",
+          "- `VER.RULE.COVERAGE`: Run coverage checks.",
+          "- `DOCS.RULE.GUIDE`: Update the guide.",
+          "- `PR.RULE.REVIEW`: Review the pull request.",
+        ].join("\n"),
+      },
+    ]
+
+    const first = render(sources, { mode: "curated", prompt: "implement the branch change" })
+    const second = render(sources, { mode: "curated", prompt: "implement the branch change" })
+
+    expect(first.blocks).toEqual(second.blocks)
+    expect(first.blocks[0]).toContain("[USR.RULE.ALWAYS] Preserve this rule.")
+    expect(first.blocks[0]).toContain("[GIT.RULE.BRANCH] Use the repository branch.")
+    expect(first.blocks[0]).toContain("[VER.RULE.COVERAGE] Run coverage checks.")
+    expect(first.blocks[0]).toContain("[DOCS.RULE.GUIDE] Update the guide.")
+    expect(first.blocks[0]).not.toContain("[PR.RULE.REVIEW]")
+    expect(first.blocks[0]).not.toContain("/repo/AGENTS.md")
+    expect(first.blocks[0]).not.toContain("omitted")
+    expect(first.telemetry?.omittedIds).toEqual(["PR.RULE.REVIEW"])
+  })
+
+  test("does not turn investigation prompts into development routing", () => {
+    const entries = parse([
+      {
+        filepath: "/repo/AGENTS.md",
+        order: 0,
+        content: "- `GIT.RULE.BRANCH`: Use the repository branch.",
+      },
+    ]).entries
+
+    expect(hasDevelopmentIntent("investigate the failure")).toBe(false)
+    expect(route(entries, "investigate the failure").selected).toEqual([])
+  })
+
+  test("excludes routing metadata headings while retaining payload", () => {
+    const rendered = render(
+      [
+        {
+          filepath: "/tmp/codex/AGENTS.md",
+          order: 0,
+          content: [
+            "## Always Loaded Files",
+            "- @$CODEX_HOME/always.md",
+            "",
+            "## Context-Routed Files",
+            "| File | Usage Context | Holds |",
+            "| --- | --- | --- |",
+            "| PULL_REQUESTS.md | PR / merge / review | PR policy |",
+            "",
+            "## Payload",
+            "- `USR.RULE.PAYLOAD`: Keep the actual instruction.",
+            "Actual payload guidance remains included.",
+          ].join("\n"),
+        },
+      ],
+      {
+        mode: "curated",
+        prompt: "investigate the repository",
+        excludedHeadings: ["Always Loaded Files", "Context-Routed Files"],
+      },
+    )
+
+    expect(rendered.blocks[0]).toContain("## Payload")
+    expect(rendered.blocks[0]).toContain("[USR.RULE.PAYLOAD] Keep the actual instruction.")
+    expect(rendered.blocks[0]).not.toContain("Always Loaded Files")
+    expect(rendered.blocks[0]).not.toContain("Context-Routed Files")
+    expect(rendered.blocks[0]).not.toContain("PULL_REQUESTS.md")
   })
 })
 

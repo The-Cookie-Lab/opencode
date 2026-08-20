@@ -2,7 +2,8 @@ import fs from "node:fs"
 import path from "node:path"
 import { createHash } from "node:crypto"
 import { spawnSync } from "node:child_process"
-import type { Source } from "./parser"
+import type { InstructionDomain, Source } from "./parser"
+import { classifyTask, normalizeTaskDomains } from "./router"
 
 export interface ResolveOptions {
   readonly cwd: string
@@ -41,7 +42,6 @@ const ROUTE_HEADINGS = ["## Context-Routed Files", "## Root File Routing"] as co
 const ALWAYS_LOADED_HEADING = "## Always Loaded Files"
 const TABLE_SEPARATOR_RE = /^:?-{3,}:?$/
 const PATH_TOKEN_RE = /(?<path>(?:\.\.\/|\.\/|\/|[A-Za-z0-9_.-]+\/)[A-Za-z0-9_./@+=:-]+)/g
-const CI_WORD_RE = /(^|[\s([{])ci($|[\s)\]},.;:!?])/
 function expandUser(value: string) {
   if (value.startsWith("~/")) return path.join(process.env.HOME ?? "", value.slice(2))
   return value
@@ -75,6 +75,15 @@ function readText(filepath: string) {
   }
 }
 
+function canonicalPath(filepath: string) {
+  const resolved = path.resolve(filepath)
+  try {
+    return fs.realpathSync(resolved)
+  } catch {
+    return resolved
+  }
+}
+
 function gitRoot(cwd: string): string | null {
   try {
     const result = spawnSync("git", ["rev-parse", "--show-toplevel"], {
@@ -84,11 +93,12 @@ function gitRoot(cwd: string): string | null {
     })
     if (result.status !== 0) return null
     const root = (result.stdout || "").trim()
-    return root || null
+    return root ? canonicalPath(root) : null
   } catch {
     return null
   }
 }
+
 
 function findStopRoot(cwd: string) {
   const git = gitRoot(cwd)
@@ -190,47 +200,39 @@ export function parseAlwaysLoaded(agentsText: string): string[] {
   return paths
 }
 
-export function routeApplies(route: { file: string }, contextText: string): boolean {
-  const haystack = contextText.toLowerCase()
-  const name = route.file
-  if (name === "PULL_REQUESTS.md") {
-    return (
-      [
-        "pull request",
-        " pr ",
-        "pr #",
-        "merge",
-        "review",
-        "ship",
-        "checks",
-        "prd-deliver",
-        "qa-and-ship",
-        "gh-pr-monitor",
-      ].some((term) => haystack.includes(term)) || CI_WORD_RE.test(haystack)
-    )
-  }
-  if (name === "GITHUB_COMMENTS.md") {
-    return ["comment", "review thread", "github review", "issue closure", "qa-and-ship", "gh-pr-monitor", "prd-deliver"].some(
-      (term) => haystack.includes(term),
-    )
-  }
-  if (name === "VERIFICATION.md") {
-    return ["test", "build", "validation", "verify", "gate", "coverage", "qa-and-ship", "prd-deliver", "pre-ship"].some((term) =>
-      haystack.includes(term),
-    )
-  }
-  if (name === "GIT_WORKTREES.md") {
-    return ["worktree", "branch", "commit", "push", "cleanup", "dirty", "qa-and-ship", "prd-deliver"].some((term) =>
-      haystack.includes(term),
-    )
-  }
-  if (name === "PRD_DELIVERY.md") {
-    return ["prd", "linear", "implement plan", "deliver", "issue delivery", "prd-deliver"].some((term) => haystack.includes(term))
-  }
-  if (name === "MACOS_CODEX_ENV.md") {
-    return ["macos", "zsh", "launchctl", "homebrew", "npx", "mcp environment"].some((term) => haystack.includes(term))
-  }
-  return false
+const KNOWN_ROUTE_DOMAINS: Record<string, InstructionDomain> = {
+  "PULL_REQUESTS.md": "pr",
+  "GITHUB_COMMENTS.md": "pr",
+  "VERIFICATION.md": "test",
+  "GIT_WORKTREES.md": "git",
+  "PRD_DELIVERY.md": "prd",
+  "MACOS_CODEX_ENV.md": "env",
+}
+
+export function resolveDeclaredRoutePath(codexHome: string, rawPath: string): string | null {
+  const normalized = rawPath.trim().replaceAll("$CODEX_HOME", codexHome)
+  if (!normalized || !/\.md$/i.test(normalized)) return null
+  const resolvedHome = path.resolve(expandUser(codexHome))
+  const resolved = path.resolve(resolvedHome, expandUser(normalized))
+  if (!contains(resolvedHome, resolved)) return null
+  return resolved
+}
+
+export function routeApplies(
+  route: { file: string; usage_context?: string; holds?: string },
+  contextText: string,
+  explicitTaskDomains?: readonly InstructionDomain[],
+): boolean {
+  const routeDomain = KNOWN_ROUTE_DOMAINS[path.basename(route.file)]
+  const routeDomains = routeDomain
+    ? [routeDomain]
+    : classifyTask([route.usage_context ?? "", route.holds ?? ""].join(" "))
+  if (routeDomains.length === 0) return false
+  const taskDomains =
+    explicitTaskDomains === undefined ? classifyTask(contextText) : normalizeTaskDomains(explicitTaskDomains)
+  if (taskDomains.length === 0) return false
+  const task = new Set(taskDomains)
+  return routeDomains.some((domain) => task.has(domain))
 }
 
 function extractPathMentions(text: string, cwd: string): string[] {
@@ -250,7 +252,7 @@ function dedupePaths(paths: string[]) {
   const seen = new Set<string>()
   const result: string[] = []
   for (const item of paths) {
-    const resolved = path.resolve(item)
+    const resolved = canonicalPath(item)
     if (seen.has(resolved)) continue
     seen.add(resolved)
     result.push(resolved)
@@ -314,7 +316,7 @@ function repoAgentsFromStartingPoints(repoRoot: string, startingPoints: string[]
   return deduped.sort((a, b) => {
     const aParts = pathRelativeTo(repoRoot, a)?.length ?? 0
     const bParts = pathRelativeTo(repoRoot, b)?.length ?? 0
-    return bParts - aParts
+    return aParts - bParts
   })
 }
 
@@ -370,7 +372,7 @@ export function resolveSourcePaths(options: ResolveOptions) {
   const paths: string[] = []
   const global = firstExistingGlobalPath(globalPaths)
   if (global) paths.push(global)
-  for (const projectPath of projectAgentsPathsShallowFirst(options.cwd)) {
+  for (const projectPath of projectAgentsPathsShallowFirst(canonicalPath(options.cwd))) {
     if (!paths.includes(projectPath)) paths.push(projectPath)
   }
   return paths
@@ -380,11 +382,12 @@ export function resolveSourcePaths(options: ResolveOptions) {
  * Resolve instruction sources.
  *
  * When prompt/event/tool hints are present (or useCodexRouting), uses Codex-parity
- * routing: deepest-first repo AGENTS, always-loaded, route table, repo overrides.
+ * routing: global source and selected route files, shallow-to-deep repo AGENTS,
+ * then repo-local routed overrides.
  * Otherwise falls back to v1 global + walk-up AGENTS discovery.
  */
 export function resolveSourcesDetailed(options: ResolveOptions): ResolveResult {
-  const cwd = path.resolve(expandUser(options.cwd))
+  const cwd = canonicalPath(expandUser(options.cwd))
   const useRouting =
     options.useCodexRouting === true ||
     Boolean(options.prompt?.trim()) ||
@@ -433,11 +436,7 @@ export function resolveSourcesDetailed(options: ResolveOptions): ResolveResult {
   const order = { value: 0 }
   const targetPaths = requestTargetPaths(options, cwd)
 
-  if (repo) {
-    for (const agents of repoAgentsFromStartingPoints(repo, targetPaths)) {
-      pushSource(sources, meta, seen, agents, "repo scoped AGENTS upward chain", order)
-    }
-  }
+  const taskDomains = classifyTask(routeContext)
 
   const globalAgentsPath =
     firstExistingGlobalPath(options.globalAgentsPaths?.length ? options.globalAgentsPaths : [path.join(codexHome, "AGENTS.md")]) ??
@@ -452,8 +451,12 @@ export function resolveSourcesDetailed(options: ResolveOptions): ResolveResult {
       if (!pushSource(sources, meta, seen, filepath, "global always-loaded file", order)) omitted.push(filepath)
     }
     for (const route of parseRouteTable(globalText)) {
-      if (!routeApplies(route, routeContext)) continue
-      const filepath = path.join(codexHome, route.file)
+      if (!routeApplies(route, routeContext, taskDomains)) continue
+      const filepath = resolveDeclaredRoutePath(codexHome, route.file)
+      if (!filepath) {
+        omitted.push(route.file)
+        continue
+      }
       if (!pushSource(sources, meta, seen, filepath, `global routed file: ${route.usage_context}`, order)) omitted.push(filepath)
     }
   } else {
@@ -461,9 +464,15 @@ export function resolveSourcesDetailed(options: ResolveOptions): ResolveResult {
   }
 
   if (repo) {
-    for (const name of ["PULL_REQUESTS.md", "GITHUB_COMMENTS.md", "PRD_DELIVERY.md"] as const) {
+    for (const agents of repoAgentsFromStartingPoints(repo, targetPaths)) {
+      pushSource(sources, meta, seen, agents, "repo scoped AGENTS upward chain", order)
+    }
+  }
+
+  if (repo) {
+    for (const name of Object.keys(KNOWN_ROUTE_DOMAINS)) {
       const filepath = path.join(repo, name)
-      if (existsFile(filepath) && routeApplies({ file: name }, routeContext)) {
+      if (existsFile(filepath) && routeApplies({ file: name }, routeContext, taskDomains)) {
         pushSource(sources, meta, seen, filepath, "repo-local routed override file", order)
       }
     }

@@ -3,13 +3,14 @@ export { parse } from "./parser"
 export type { Result as ReconcileResult } from "./reconciler"
 export { reconcile } from "./reconciler"
 export type { Routed } from "./router"
-export { classifyTask, countDomains, route } from "./router"
+export { classifyTask, countDomains, hasDevelopmentIntent, normalizeTaskDomains, route } from "./router"
 export type { Mode, RenderOptions, Rendered, Telemetry } from "./renderer"
 export { render } from "./renderer"
 export type { ResolveOptions, ResolveResult, ResolvedSourceMeta } from "./resolve-sources"
 export {
   parseAlwaysLoaded,
   parseRouteTable,
+  resolveDeclaredRoutePath,
   resolveSourcePaths,
   resolveSources,
   resolveSourcesDetailed,
@@ -35,17 +36,30 @@ export {
 } from "./suppress-manifest"
 
 import type { Mode } from "./renderer"
-import type { Source } from "./parser"
+import type { InstructionDomain, Source } from "./parser"
 import { parse } from "./parser"
 import { reconcile } from "./reconciler"
-import { classifyTask, countDomains, route } from "./router"
+import {
+  classifyTask,
+  countDomains,
+  hasDevelopmentIntent,
+  normalizeTaskDomains,
+  route,
+} from "./router"
 import { render } from "./renderer"
 import { resolveSources } from "./resolve-sources"
 import { renderWithDelta, type SessionProfile } from "./session-profile"
 
+
 export const InstructionParser = { parse }
 export const InstructionReconciler = { reconcile }
-export const InstructionRouter = { classifyTask, countDomains, route }
+export const InstructionRouter = {
+  classifyTask,
+  countDomains,
+  hasDevelopmentIntent,
+  normalizeTaskDomains,
+  route,
+}
 export const InstructionRenderer = { render }
 
 export interface RenderRequest {
@@ -63,6 +77,8 @@ export interface RenderRequest {
   readonly delta?: boolean
   readonly previousProfile?: SessionProfile | null
   readonly useCodexRouting?: boolean
+  readonly taskDomains?: readonly InstructionDomain[]
+  readonly excludedHeadings?: readonly string[]
 }
 
 export interface RenderResponse {
@@ -95,6 +111,8 @@ export function renderInstructionRequest(request: RenderRequest): RenderResponse
       sources,
       mode: request.mode ?? "curated",
       prompt: request.prompt,
+      taskDomains: request.taskDomains,
+      excludedHeadings: request.excludedHeadings,
       previous: request.previousProfile,
       delta: true,
     })
@@ -110,6 +128,8 @@ export function renderInstructionRequest(request: RenderRequest): RenderResponse
   const rendered = render(sources, {
     mode: request.mode ?? "curated",
     prompt: request.prompt,
+    taskDomains: request.taskDomains,
+    excludedHeadings: request.excludedHeadings,
   })
   return {
     blocks: rendered.blocks,
@@ -120,6 +140,8 @@ export function renderInstructionRequest(request: RenderRequest): RenderResponse
       sources,
       mode: request.mode ?? "curated",
       prompt: request.prompt,
+      taskDomains: request.taskDomains,
+      excludedHeadings: request.excludedHeadings,
       delta: false,
     }).profile,
   }
