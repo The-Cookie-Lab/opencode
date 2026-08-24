@@ -42,7 +42,9 @@ describe("resolve-sources v2 routing", () => {
     expect(routeApplies({ file: "TEAM_NOTES.md", usage_context: "SDL / indexed", holds: "SDL policy" }, "indexed SDL")).toBe(
       false,
     )
-    expect(resolveDeclaredRoutePath("/tmp/codex", "PULL_REQUESTS.md")).toBe("/tmp/codex/PULL_REQUESTS.md")
+    expect(resolveDeclaredRoutePath("/tmp/codex", "PULL_REQUESTS.md")).toBe(
+      path.resolve("/tmp/codex", "PULL_REQUESTS.md"),
+    )
     expect(resolveDeclaredRoutePath("/tmp/codex", "../PULL_REQUESTS.md")).toBe(null)
     expect(resolveDeclaredRoutePath("/tmp/codex", "/tmp/outside/PULL_REQUESTS.md")).toBe(null)
     expect(resolveDeclaredRoutePath("/tmp/codex", "notes.txt")).toBe(null)
