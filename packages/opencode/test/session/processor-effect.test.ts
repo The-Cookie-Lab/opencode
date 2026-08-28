@@ -949,7 +949,6 @@ it.live("session.processor effect tests record aborted errors and idle state", (
   provideTmpdirServer(
     ({ dir, llm }) =>
       Effect.gen(function* () {
-        const seen = defer<void>()
         const { processors, session, provider } = yield* boot()
         const events = yield* EventV2Bridge.Service
         const sts = yield* SessionStatus.Service
@@ -966,7 +965,6 @@ it.live("session.processor effect tests record aborted errors and idle state", (
           const data = evt.data as typeof Session.Event.Error.data.Type
           if (data.sessionID !== chat.id || !data.error) return Effect.void
           errs.push(data.error.name)
-          seen.resolve()
           return Effect.void
         })
         const handle = yield* processors.create({
@@ -998,7 +996,10 @@ it.live("session.processor effect tests record aborted errors and idle state", (
         yield* Fiber.interrupt(run)
 
         const exit = yield* Fiber.await(run)
-        yield* Effect.promise(() => seen.promise)
+        yield* waitFor(
+          Effect.sync(() => (errs.includes("MessageAbortedError") ? true : undefined)),
+          "session.error event not observed after abort",
+        )
         const stored = yield* MessageV2.get({ sessionID: chat.id, messageID: msg.id })
         const state = yield* sts.get(chat.id)
         yield* off
