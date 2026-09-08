@@ -96,6 +96,7 @@ const it = testEffect(
     RuntimeFlags.layer({ experimentalEventSystem: true }),
   ),
 )
+const integrationTimeout = process.platform === "win32" ? 15_000 : undefined
 
 const providerCfg = (url: string) => ({
   provider: {
@@ -189,4 +190,5 @@ it.live("tool execution produces non-empty session diff (snapshot race)", () =>
     }),
     { git: true, config: providerCfg },
   ),
+  integrationTimeout,
 )

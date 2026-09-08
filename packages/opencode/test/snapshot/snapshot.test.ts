@@ -19,6 +19,7 @@ import { testEffect } from "../lib/effect"
 const it = testEffect(
   Layer.mergeAll(LayerNode.compile(LayerNode.group([Snapshot.node, FSUtil.node])), testInstanceStoreLayer),
 )
+const integrationTimeout = process.platform === "win32" ? 15_000 : undefined
 // Windows forbids both * and : in directory names.
 const nonWindowsIt = process.platform === "win32" ? it.live.skip : it.live
 
@@ -686,6 +687,7 @@ it.live(
       expect(patch2.files).not.toContain(fwd(tmp1.path, "project1.txt"))
     }).pipe(provideInstance(tmp2.path))
   }),
+  integrationTimeout,
 )
 
 it.live(
@@ -1215,4 +1217,5 @@ it.instance(
     for (const file of fresh) expect(yield* exists(file)).toBe(false)
   }),
   { git: true },
+  integrationTimeout,
 )

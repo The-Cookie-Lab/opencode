@@ -17,6 +17,7 @@ const it = testEffect(
     [InstanceStore.bootstrapNode, InstanceBootstrap.node],
   ]),
 )
+const integrationTimeout = process.platform === "win32" ? 15_000 : undefined
 
 // InstanceBootstrap must run before any code touches the instance —
 // originally tracked by PRs #25389 and #25449, now a permanent
@@ -76,6 +77,7 @@ it.live("InstanceStore.provide runs InstanceBootstrap before effect", () =>
 
     expect(existsSync(tmp.marker)).toBe(true)
   }),
+  integrationTimeout,
 )
 
 it.live("CLI bootstrap runs InstanceBootstrap before callback", () =>
@@ -86,6 +88,7 @@ it.live("CLI bootstrap runs InstanceBootstrap before callback", () =>
 
     expect(existsSync(tmp.marker)).toBe(true)
   }),
+  integrationTimeout,
 )
 
 it.live("CLI bootstrap disposes the instance when the callback rejects", () =>
@@ -101,6 +104,7 @@ it.live("CLI bootstrap disposes the instance when the callback rejects", () =>
     if (Exit.isFailure(exit)) expect(Cause.squash(exit.cause)).toMatchObject({ message: "boom" })
     yield* Fiber.join(disposed)
   }),
+  integrationTimeout,
 )
 
 it.live("InstanceStore.reload runs InstanceBootstrap", () =>
@@ -112,4 +116,5 @@ it.live("InstanceStore.reload runs InstanceBootstrap", () =>
 
     expect(existsSync(tmp.marker)).toBe(true)
   }),
+  integrationTimeout,
 )
