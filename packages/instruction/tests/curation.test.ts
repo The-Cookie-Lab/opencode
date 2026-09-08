@@ -4,6 +4,7 @@ import { reconcile } from "../src/reconciler"
 import { route, hasDevelopmentIntent } from "../src/router"
 import { render } from "../src/renderer"
 import {
+  MANAGED_CURSORIGNORE_MARKER,
   applyManagedCursorignoreBlock,
   removeManagedCursorignoreBlock,
   suppressPatterns,
@@ -144,10 +145,96 @@ describe("suppress manifest", () => {
   test("applies and removes managed cursorignore block", () => {
     const patterns = ["AGENTS.md", "**/AGENTS.md"]
     const applied = applyManagedCursorignoreBlock("", patterns)
-    expect(applied).toContain("BEGIN cookielayer-cursor-instruction-hook")
+    expect(applied).toContain(`BEGIN ${MANAGED_CURSORIGNORE_MARKER}`)
     expect(applied).toContain("AGENTS.md")
     const removed = removeManagedCursorignoreBlock(applied)
     expect(removed.trim()).toBe("")
+  })
+
+  test("migrates a legacy managed block to the CAT marker", () => {
+    const legacy = [
+      "# BEGIN cookielayer-cursor-instruction-hook (managed)",
+      "AGENTS.md",
+      "# END cookielayer-cursor-instruction-hook",
+      "",
+    ].join("\n")
+    const applied = applyManagedCursorignoreBlock(legacy, ["AGENTS.md"])
+    expect(applied).toContain(`BEGIN ${MANAGED_CURSORIGNORE_MARKER}`)
+    expect(applied).toContain("AGENTS.md")
+    expect(applied).not.toContain("cookielayer-cursor-instruction-hook")
+  })
+
+  test("preserves user ignore entries while replacing the managed block", () => {
+    const text = [
+      "build/",
+      "node_modules/",
+      "",
+      "# BEGIN cookielayer-cursor-instruction-hook (managed)",
+      "AGENTS.md",
+      "# END cookielayer-cursor-instruction-hook",
+      "",
+      ".cache/",
+    ].join("\n")
+    const applied = applyManagedCursorignoreBlock(text, ["AGENTS.md"])
+    expect(applied).toContain("build/")
+    expect(applied).toContain("node_modules/")
+    expect(applied).toContain(".cache/")
+    expect(applied).toContain(`BEGIN ${MANAGED_CURSORIGNORE_MARKER}`)
+    expect(applied).not.toContain("cookielayer-cursor-instruction-hook")
+  })
+
+  test("collapses mixed legacy and canonical blocks into one canonical block", () => {
+    const text = [
+      "# BEGIN cookielayer-cursor-instruction-hook (managed)",
+      "AGENTS.md",
+      "# END cookielayer-cursor-instruction-hook",
+      "",
+      `# BEGIN ${MANAGED_CURSORIGNORE_MARKER} (managed by ./cookielab clients sync)`,
+      "# sync_version: 1",
+      "# adapter: CAT instruction curation",
+      "CLAUDE.md",
+      `# END ${MANAGED_CURSORIGNORE_MARKER}`,
+      "",
+    ].join("\n")
+    const applied = applyManagedCursorignoreBlock(text, ["AGENTS.md", "CLAUDE.md"])
+    expect(applied.split(`BEGIN ${MANAGED_CURSORIGNORE_MARKER}`).length - 1).toBe(1)
+    expect(applied).not.toContain("cookielayer-cursor-instruction-hook")
+  })
+
+  test("repeated application is idempotent", () => {
+    const text = "build/\n"
+    const once = applyManagedCursorignoreBlock(text, ["AGENTS.md"])
+    const twice = applyManagedCursorignoreBlock(once, ["AGENTS.md"])
+    expect(twice).toBe(once)
+  })
+
+  test("removal preserves unrelated content and drops every managed block", () => {
+    const text = [
+      "build/",
+      "",
+      "# BEGIN cookielayer-cursor-instruction-hook (managed)",
+      "AGENTS.md",
+      "# END cookielayer-cursor-instruction-hook",
+      "",
+      ".cache/",
+    ].join("\n")
+    const removed = removeManagedCursorignoreBlock(text)
+    expect(removed).toContain("build/")
+    expect(removed).toContain(".cache/")
+    expect(removed).not.toContain("cookielayer-cursor-instruction-hook")
+    expect(removed).not.toContain(MANAGED_CURSORIGNORE_MARKER)
+  })
+
+  test("does not delete an incomplete legacy block", () => {
+    const text = [
+      "build/",
+      "",
+      "# BEGIN cookielayer-cursor-instruction-hook (managed)",
+      "AGENTS.md",
+    ].join("\n")
+    const removed = removeManagedCursorignoreBlock(text)
+    expect(removed).toContain("cookielayer-cursor-instruction-hook")
+    expect(removed).toContain("AGENTS.md")
   })
 })
 

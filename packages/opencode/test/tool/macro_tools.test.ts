@@ -212,7 +212,7 @@ describe("macro tools", () => {
       ),
     )
 
-    it.live("falls back to a body-free AST/text outline when LSP is unavailable", () =>
+    it.live("falls back to a body-free native text outline when LSP is unavailable", () =>
       provideTmpdirInstance(
         (dir) =>
           Effect.gen(function* () {
@@ -236,7 +236,7 @@ describe("macro tools", () => {
             const tool = yield* initViewOutline()
             const result = yield* tool.execute({ path: "service.ts", maxSymbols: 2 }, ctx)
 
-            expect(["cookielayer_ast", "text"]).toContain(result.metadata.source)
+            expect(result.metadata.source).toBe("text")
             expect(result.metadata.truncated).toBe(true)
             expect(result.output).toContain("1 class TokenService")
             expect(result.output).toContain("2 method TokenService.refreshToken")

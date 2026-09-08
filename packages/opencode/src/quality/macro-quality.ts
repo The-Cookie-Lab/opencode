@@ -5,7 +5,6 @@ export type MacroRiskArea =
   | "tool_registry"
   | "runtime_flags"
   | "context_intel"
-  | "cookielayer_adapter"
   | "permissions"
   | "session_prompting"
   | "docs"
@@ -92,8 +91,6 @@ export const REQUIRED_SCENARIOS = [
   "project-dossier-monorepo",
   "view-outline-lsp-success",
   "view-outline-lsp-fallback",
-  "view-outline-cookielayer-success",
-  "view-outline-cookielayer-unavailable",
   "view-outline-large-file-truncation",
   "view-outline-binary-file",
   "view-outline-symlink",
@@ -114,14 +111,14 @@ export const MACRO_GATES: MacroGate[] = [
   {
     id: "manifest-contracts",
     description: "Validate the macro scenario manifest and shared contract fixtures.",
-    riskAreas: ["context_intel", "cookielayer_adapter", "tool_registry", "tests"],
+    riskAreas: ["context_intel", "tool_registry", "tests"],
     modes: ["local", "ci", "full"],
   },
   {
     id: "macro-quality-tests",
     description: "Run quality framework unit tests.",
     command: ["bun", "test", "test/quality/macro_quality.test.ts"],
-    riskAreas: ["context_intel", "cookielayer_adapter", "tool_registry", "tests", "ci"],
+    riskAreas: ["context_intel", "tool_registry", "tests", "ci"],
     modes: ["local", "ci", "full"],
   },
   {
@@ -134,7 +131,7 @@ export const MACRO_GATES: MacroGate[] = [
       "test/tool/registry.test.ts",
       "test/tool/macro_tools.test.ts",
     ],
-    riskAreas: ["context_intel", "cookielayer_adapter", "tool_registry", "runtime_flags", "permissions"],
+    riskAreas: ["context_intel", "tool_registry", "runtime_flags", "permissions"],
     modes: ["local", "ci", "full"],
   },
   {
@@ -157,7 +154,6 @@ export const MACRO_GATES: MacroGate[] = [
     command: ["bun", "typecheck"],
     riskAreas: [
       "context_intel",
-      "cookielayer_adapter",
       "tool_registry",
       "runtime_flags",
       "permissions",
@@ -171,7 +167,7 @@ export const MACRO_GATES: MacroGate[] = [
     id: "single-build-smoke",
     description: "Build a single native opencode binary and run the build smoke test.",
     command: ["bun", "run", "./packages/opencode/script/build.ts", "--single"],
-    riskAreas: ["context_intel", "cookielayer_adapter", "tool_registry", "runtime_flags", "permissions"],
+    riskAreas: ["context_intel", "tool_registry", "runtime_flags", "permissions"],
     modes: ["ci", "full"],
   },
   {
@@ -196,9 +192,6 @@ export function classifyChangedFiles(files: string[]): MacroRiskArea[] {
     }
     if (file.includes("src/effect/runtime-flags.ts")) areas.add("runtime_flags")
     if (file.includes("src/context-intel/")) areas.add("context_intel")
-    if (/cookielayer|openviking|viking/i.test(file) || file.startsWith("../CookieLayer/")) {
-      areas.add("cookielayer_adapter")
-    }
     if (file.includes("src/permission/") || file.includes("test/permission/")) areas.add("permissions")
     if (file.includes("src/session/prompt") || file.includes("src/skill/prompt/")) areas.add("session_prompting")
   }
@@ -213,7 +206,6 @@ export function selectRequiredGates(input: {
   const riskAreas = new Set(input.riskAreas)
   const macroTouched =
     riskAreas.has("context_intel") ||
-    riskAreas.has("cookielayer_adapter") ||
     riskAreas.has("tool_registry") ||
     riskAreas.has("runtime_flags") ||
     input.changedFiles.some((file) => file.includes("macro") || file.includes("ContextIntel"))

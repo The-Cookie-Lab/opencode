@@ -70,26 +70,8 @@
       "flags": ["OPENCODE_EXPERIMENTAL_CONTEXT_TOOLS"],
       "requiredTools": ["view_outline"],
       "forbiddenTools": ["read"],
-      "assertions": ["metadata.source in cookielayer_ast,text", "output excludes method bodies"],
+      "assertions": ["metadata.source == 'text'", "output excludes method bodies"],
       "budgets": { "output_tokens": 180, "latency_ms": 1200, "max_symbols": 120 }
-    },
-    {
-      "id": "view-outline-cookielayer-success",
-      "fixture": "fixtures/python-repo/app.py",
-      "flags": ["OPENCODE_EXPERIMENTAL_CONTEXT_TOOLS"],
-      "requiredTools": ["view_outline"],
-      "forbiddenTools": ["read"],
-      "assertions": ["metadata.source == 'cookielayer_ast'", "adapter == openviking"],
-      "budgets": { "output_tokens": 180, "latency_ms": 2000, "max_symbols": 120 }
-    },
-    {
-      "id": "view-outline-cookielayer-unavailable",
-      "fixture": "fixtures/python-repo/app.py",
-      "flags": ["OPENCODE_EXPERIMENTAL_CONTEXT_TOOLS"],
-      "requiredTools": ["view_outline"],
-      "forbiddenTools": ["read"],
-      "assertions": ["metadata.source == 'text'", "output still contains class/function rows"],
-      "budgets": { "output_tokens": 180, "latency_ms": 1000, "max_symbols": 120 }
     },
     {
       "id": "view-outline-large-file-truncation",

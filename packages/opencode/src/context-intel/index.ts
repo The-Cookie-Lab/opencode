@@ -1,17 +1,13 @@
 import path from "path"
 import { pathToFileURL } from "url"
-import { existsSync } from "fs"
 import { LayerNode } from "@opencode-ai/core/effect/layer-node"
 import { FSUtil } from "@opencode-ai/core/fs-util"
-import { CrossSpawnSpawner } from "@opencode-ai/core/cross-spawn-spawner"
 import { Git } from "@/git"
 import { InstanceState } from "@/effect/instance-state"
 import { LSP } from "@/lsp/lsp"
 import { Ripgrep } from "@opencode-ai/core/filesystem/ripgrep"
 import { Context, Effect, Layer, Scope } from "effect"
 import * as Stream from "effect/Stream"
-import { ChildProcess } from "effect/unstable/process"
-import { ChildProcessSpawner } from "effect/unstable/process/ChildProcessSpawner"
 import { FetchHttpClient } from "effect/unstable/http"
 
 const IGNORED_DIRS = [
@@ -138,7 +134,7 @@ export type ProjectDossierMetadata = {
   telemetry?: TelemetrySnapshot
 }
 
-export type OutlineSource = "lsp" | "cookielayer_ast" | "text"
+export type OutlineSource = "lsp" | "text"
 
 export type OutlineSymbol = {
   line: number
@@ -153,7 +149,6 @@ export type OutlineMetadata = {
   source: OutlineSource
   symbol_count: number
   truncated: boolean
-  adapter?: "openviking" | "text"
   telemetry?: TelemetrySnapshot
 }
 
@@ -237,7 +232,7 @@ export class Service extends Context.Service<Service, Interface>()("@opencode/Co
 export const layer: Layer.Layer<
   Service,
   never,
-  FSUtil.Service | Git.Service | LSP.Service | Ripgrep.Service | ChildProcessSpawner
+  FSUtil.Service | Git.Service | LSP.Service | Ripgrep.Service
 > = Layer.effect(
   Service,
   Effect.gen(function* () {
@@ -245,7 +240,6 @@ export const layer: Layer.Layer<
     const git = yield* Git.Service
     const lsp = yield* LSP.Service
     const rg = yield* Ripgrep.Service
-    const spawner = yield* ChildProcessSpawner
     const scope = yield* Scope.Scope
 
     const state = yield* InstanceState.make<State>(
@@ -329,17 +323,15 @@ export const layer: Layer.Layer<
         }
       }
 
-      const skeleton = yield* cookieLayerSkeleton(input.path, spawner).pipe(Effect.catch(() => Effect.succeed(undefined)))
       const symbols = outlineFromText(input.path, text, input.includePrivate ?? false)
       const final = takeSymbols(symbols, limit)
       return {
         output: renderOutline(final.symbols),
         metadata: {
           path: input.path,
-          source: skeleton ? ("cookielayer_ast" as const) : ("text" as const),
+          source: "text" as const,
           symbol_count: final.symbols.length,
           truncated: final.truncated,
-          adapter: skeleton ? ("openviking" as const) : ("text" as const),
         },
       }
     })
@@ -533,7 +525,7 @@ export const layer: Layer.Layer<
 export const node = LayerNode.make({
   service: Service,
   layer,
-  deps: [FSUtil.node, Git.node, LSP.node, CrossSpawnSpawner.node, Ripgrep.node],
+  deps: [FSUtil.node, Git.node, LSP.node, Ripgrep.node],
 })
 
 export const defaultLayer = LayerNode.compile(node)
@@ -762,63 +754,6 @@ function lspKind(kind: number) {
 
 function isObject(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value)
-}
-
-function cookieLayerSkeleton(file: string, spawner: ChildProcessSpawner["Service"]) {
-  return Effect.gen(function* () {
-    const root = findCookieLayerRoot(file)
-    if (!root) return
-    const python = process.env.OPENCODE_COOKIE_LAYER_PYTHON ?? process.env.PYTHON ?? "python3"
-    const script = [
-      "import json, pathlib, sys",
-      `sys.path.insert(0, ${JSON.stringify(root)})`,
-      "from openviking.parse.parsers.code.ast.extractor import get_extractor",
-      "p = pathlib.Path(sys.argv[1])",
-      "text = p.read_text(encoding='utf-8', errors='ignore')",
-      "skeleton = get_extractor().extract_skeleton(str(p), text, verbose=False)",
-      "print(json.dumps({'skeleton': skeleton}))",
-    ].join("\n")
-    const handle = yield* spawner.spawn(
-      ChildProcess.make(python, ["-c", script, file], {
-        cwd: root,
-        extendEnv: true,
-        env: { PYTHONPATH: [root, process.env.PYTHONPATH].filter(Boolean).join(path.delimiter) },
-        stdin: "ignore",
-      }),
-    )
-    const [stdout, _stderr, code] = yield* Effect.all(
-      [Stream.mkString(Stream.decodeText(handle.stdout)), Stream.mkString(Stream.decodeText(handle.stderr)), handle.exitCode],
-      { concurrency: "unbounded" },
-    )
-    if (code !== 0) return
-    const data = JSON.parse(stdout) as { skeleton?: string | null }
-    return data.skeleton || undefined
-  }).pipe(Effect.scoped)
-}
-
-function findCookieLayerRoot(file: string) {
-  const envRoot = process.env.OPENCODE_COOKIE_LAYER_PATH ?? process.env.COOKIE_LAYER_PATH ?? process.env.COOKIECODE_LAYER_PATH
-  if (envRoot) return envRoot
-  const candidates = [...ancestorCandidates(path.dirname(file)), ...ancestorCandidates(process.cwd())]
-  return candidates.find((candidate) => {
-    try {
-      return existsSync(path.join(candidate, "openviking", "parse", "parsers", "code", "ast", "extractor.py"))
-    } catch {
-      return false
-    }
-  })
-}
-
-function ancestorCandidates(start: string) {
-  const result: string[] = []
-  let current = path.resolve(start)
-  while (true) {
-    result.push(path.join(current, "CookieLayer"))
-    if (path.basename(current) === "CookieLayer") result.push(current)
-    const parent = path.dirname(current)
-    if (parent === current) return result
-    current = parent
-  }
 }
 
 export * as ContextIntel from "."

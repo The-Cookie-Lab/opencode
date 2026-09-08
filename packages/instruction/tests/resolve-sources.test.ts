@@ -51,7 +51,7 @@ describe("resolve-sources v2 routing", () => {
   })
 
   test("orders global sources, shallow repo instructions, then repo overrides", () => {
-    const root = fs.mkdtempSync(path.join(os.tmpdir(), "cookielayer-order-"))
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "cat-order-"))
     try {
       const codexHome = path.join(root, "codex")
       const repo = path.join(root, "repo")
@@ -84,7 +84,7 @@ describe("resolve-sources v2 routing", () => {
   })
 
   test("resolves always-loaded and routed files from codex home", () => {
-    const root = fs.mkdtempSync(path.join(os.tmpdir(), "cookielayer-resolve-"))
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "cat-resolve-"))
     try {
       const codexHome = path.join(root, "codex")
       const repo = path.join(root, "repo")
