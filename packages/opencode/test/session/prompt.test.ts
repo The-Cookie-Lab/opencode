@@ -1404,16 +1404,23 @@ it.instance(
       yield* addSubtask(chat.id, msg.id)
 
       const fiber = yield* prompt.loop({ sessionID: chat.id }).pipe(Effect.forkChild)
-      yield* llm.wait(1)
-
-      const msgs = yield* MessageV2.filterCompactedEffect(chat.id)
-      const taskMsg = msgs.find((item) => item.info.role === "assistant" && item.info.agent === "general")
-      const tool = taskMsg ? toolPart(taskMsg.parts) : undefined
-      const sessionID = tool?.state.status === "running" ? tool.state.metadata?.sessionId : undefined
+      const tool = yield* pollWithTimeout(
+        Effect.gen(function* () {
+          const msgs = yield* MessageV2.filterCompactedEffect(chat.id)
+          const taskMsg = msgs.find((item) => item.info.role === "assistant" && item.info.agent === "general")
+          const tool = taskMsg?.parts.find(
+            (part): part is SessionV1.ToolPart => part.type === "tool" && part.tool === "task",
+          )
+          if (tool?.state.status === "running" && tool.state.metadata?.sessionId) return tool
+        }),
+        "timed out waiting for running slash command task",
+      )
+      if (tool.state.status !== "running") return
+      const sessionID = tool.state.metadata?.sessionId
       expect(typeof sessionID).toBe("string")
       if (typeof sessionID !== "string") throw new Error("missing child session id")
       const childID = SessionID.make(sessionID)
-      expect((yield* status.get(childID)).type).toBe("busy")
+      yield* waitForBusy(childID)
 
       yield* prompt.cancel(chat.id)
       const exit = yield* Fiber.await(fiber)
