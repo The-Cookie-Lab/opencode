@@ -2,8 +2,7 @@ import { FinishReason, LLMEvent, ProviderMetadata, ToolResultValue } from "@open
 import { Effect, Schema } from "effect"
 import { type streamText } from "ai"
 import { errorMessage } from "@/util/error"
-import * as Log from "@opencode-ai/core/util/log"
-const log = Log.create({ service: "session.llm.ai-sdk" })
+import { ProviderError } from "@/provider/error"
 
 type Result = Awaited<ReturnType<typeof streamText>>
 type AISDKEvent = Result["fullStream"] extends AsyncIterable<infer T> ? T : never
@@ -112,6 +111,8 @@ export function toLLMEvents(
       return Effect.succeed([LLMEvent.stepStart({ index: state.step })])
 
     case "finish-step":
+      if (event.rawFinishReason === "network_error")
+        return Effect.fail(new ProviderError.ResponseStreamError("Provider finish_reason: network_error"))
       return Effect.sync(() => {
         const original = enrichProviderMetadata(event.usage, event.providerMetadata)
         const metadata =

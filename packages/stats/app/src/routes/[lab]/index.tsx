@@ -32,6 +32,7 @@ import {
   applyThemePreference,
   Footer,
   getGitHubStars,
+  githubLink,
   Header,
   isThemePreference,
   themeStorageKey,
@@ -141,7 +142,11 @@ export default function StatsLab() {
       <Meta name="twitter:description" content={labDescription()} />
       <Meta name="twitter:image" content={statsUnfurlUrl} />
       <Meta name="twitter:image:alt" content={i18n.t("app.unfurlAlt")} />
-      <Header githubStars={githubStars() ?? "150K"} links={labHeaderLinks()} brandHref={import.meta.env.BASE_URL} />
+      <Header
+        githubStars={githubStars() ?? githubLink.fallbackStars}
+        links={labHeaderLinks()}
+        brandHref={import.meta.env.BASE_URL}
+      />
       <div data-component="container">
         <div data-component="content">
           <Show when={page() !== undefined} fallback={<LabLoading />}>
@@ -468,13 +473,15 @@ function LabUsageSection(props: { lab: ModelCatalogLab; data: StatsLabData | nul
                     <div data-slot="tooltip-divider" />
                     <p>
                       <span data-slot="tooltip-label">
-                        <i data-kind="tokens" /> {i18n.t("lab.dailyTokens")}
+                        <i data-kind="tokens" />
+                        <span data-slot="tooltip-name">{i18n.t("lab.dailyTokens")}</span>
                       </span>
                       <b>{formatTokens(active.point.tokens)}</b>
                     </p>
                     <p>
                       <span data-slot="tooltip-label">
-                        <i data-kind="users" /> {i18n.t("model.uniqueUsers")}
+                        <i data-kind="users" />
+                        <span data-slot="tooltip-name">{i18n.t("model.uniqueUsers")}</span>
                       </span>
                       <b>{formatUsers(active.point.users)}</b>
                     </p>
@@ -646,7 +653,7 @@ function LabModelTooltip(props: { state: LabModelTooltipState }) {
           </span>
           <strong>{props.state.model.name}</strong>
         </div>
-        <p>{props.state.model.description ?? "Recent OpenCode Go usage, share, context, and output limits."}</p>
+        <p>{props.state.model.description ?? "Recent OpenCode usage, share, context, and output limits."}</p>
       </div>
       <div data-slot="tooltip-divider" />
       <div data-slot="lab-model-tooltip-metrics">
