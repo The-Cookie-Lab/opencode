@@ -57,6 +57,24 @@ describe("structured instruction curation", () => {
     expect(curated.blocks[0]).not.toContain("<agent-instruction-telemetry>")
     expect(curated.telemetry?.omittedIds).toEqual(["PR.RULE.REVIEW"])
   })
+  test("keeps Rules section entries active for every curated request", () => {
+    const curated = render(
+      [{
+        filepath: "/repo/AGENTS.md",
+        order: 0,
+        content: [
+          "## Rules",
+          "- `CL.RULE.SCOPE`: CookieLab owns the workspace; huggingface owns the model server.",
+          "- `CL.RULE.PLATFORMS`: Keep every change portable across macOS, Windows, and Linux.",
+        ].join("\n"),
+      }],
+      { mode: "curated", prompt: "open a pull request" },
+    )
+
+    expect(curated.blocks[0]).toContain("[CL.RULE.SCOPE]")
+    expect(curated.blocks[0]).toContain("[CL.RULE.PLATFORMS]")
+  })
+
   test("selects always entries plus development domains without model metadata", () => {
     const sources = [
       {

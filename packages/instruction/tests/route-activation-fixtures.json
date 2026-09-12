@@ -28,5 +28,25 @@
     },
     "prompt": "update documentation",
     "expected": true
+  },
+  {
+    "name": "validation",
+    "route": {
+      "file": "VERIFICATION.md",
+      "usage_context": "validation",
+      "holds": "test policy"
+    },
+    "prompt": "run validation",
+    "expected": true
+  },
+  {
+    "name": "scenarios",
+    "route": {
+      "file": "VERIFICATION.md",
+      "usage_context": "scenarios",
+      "holds": "test policy"
+    },
+    "prompt": "execute scenarios",
+    "expected": true
   }
 ]

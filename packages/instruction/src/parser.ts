@@ -72,6 +72,7 @@ function inferDomains(input: { id?: string; heading?: string; text: string; stru
     if (pattern.test(text)) found.push(domain)
   }
 
+  if (input.heading === "Rules") found.push("always")
   const idPrefix = prefix(input.id)
   if (idPrefix === "PR" || idPrefix === "GHC") found.push("pr")
   if (idPrefix === "GIT") found.push("git")
