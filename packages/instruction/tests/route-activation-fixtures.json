@@ -10,6 +10,36 @@
     "expected": true
   },
   {
+    "name": "branch_push",
+    "route": {
+      "file": "PULL_REQUESTS.md",
+      "usage_context": "Branch push and ship work",
+      "holds": "PR lifecycle"
+    },
+    "prompt": "push this branch",
+    "expected": true
+  },
+  {
+    "name": "ship_change",
+    "route": {
+      "file": "PULL_REQUESTS.md",
+      "usage_context": "Branch push and ship work",
+      "holds": "PR lifecycle"
+    },
+    "prompt": "ship this change",
+    "expected": true
+  },
+  {
+    "name": "prd_delivery",
+    "route": {
+      "file": "PULL_REQUESTS.md",
+      "usage_context": "Pull request creation and delivery",
+      "holds": "PR lifecycle"
+    },
+    "prompt": "use prd-deliver for this feature",
+    "expected": true
+  },
+  {
     "name": "ci_word_boundary",
     "route": {
       "file": "PULL_REQUESTS.md",
@@ -47,6 +77,16 @@
       "holds": "test policy"
     },
     "prompt": "execute scenarios",
+    "expected": true
+  },
+  {
+    "name": "underscored_environment_route",
+    "route": {
+      "file": "MACOS_CODEX_ENV.md",
+      "usage_context": "macOS shell and environment work",
+      "holds": "environment policy"
+    },
+    "prompt": "MACOS_CODEX_ENV.md",
     "expected": true
   }
 ]

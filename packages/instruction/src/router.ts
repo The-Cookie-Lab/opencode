@@ -7,7 +7,7 @@ export interface Routed {
 }
 
 const TASK_KEYWORDS: Array<[InstructionDomain, RegExp]> = [
-  ["pr", /\b(pull request|pr\b|review|merge|github comment|review thread|closeout|ci|checks|prd-deliver|qa-and-ship|gh-pr-monitor)\b/i],
+  ["pr", /\b(pull request|pr\b|review|merge|github comment|review thread|closeout|ci|checks|push|ship(?:ping)?|prd deliver|qa and ship|gh pr monitor)\b/i],
   ["git", /\b(git|worktree|branch|commit|push|checkout|dirty|default branch)\b/i],
   ["test", /\b(test|tests|unit|coverage|build|typecheck|lint|smoke|gate|verification|validation|scenarios?)\b/i],
   ["prd", /\b(linear|prd|ticket|issue)\b/i],
@@ -37,11 +37,12 @@ export function hasDevelopmentIntent(prompt: string | undefined) {
 
 export function classifyTask(prompt: string | undefined): InstructionDomain[] {
   if (!prompt?.trim()) return []
+  const normalizedPrompt = prompt.replace(/[_-]+/g, " ")
   const domains: InstructionDomain[] = []
   for (const [domain, pattern] of TASK_KEYWORDS) {
-    if (pattern.test(prompt)) domains.push(domain)
+    if (pattern.test(normalizedPrompt)) domains.push(domain)
   }
-  if (hasDevelopmentIntent(prompt)) domains.push("git", "test", "docs")
+  if (hasDevelopmentIntent(normalizedPrompt)) domains.push("git", "test", "docs")
   return uniqueDomains(domains)
 }
 
