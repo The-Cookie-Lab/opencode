@@ -205,6 +205,7 @@ export function detectDesktopNativeLocale(languages: readonly string[]): Desktop
       return target?.language === source.language && target.script === source.script
     })
     if (match) return match
+    if (source.language === "pa" && source.region === "PK" && source.script === "Aran") return "pa"
   }
   return "en"
 }
