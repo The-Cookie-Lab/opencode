@@ -1,0 +1,32 @@
+[
+  {
+    "name": "pull_request",
+    "route": {
+      "file": "PULL_REQUESTS.md",
+      "usage_context": "Pull request creation, review, merge, and closeout",
+      "holds": "PR lifecycle"
+    },
+    "prompt": "open a pull request and merge it",
+    "expected": true
+  },
+  {
+    "name": "ci_word_boundary",
+    "route": {
+      "file": "PULL_REQUESTS.md",
+      "usage_context": "CI checks",
+      "holds": "PR lifecycle"
+    },
+    "prompt": "fix the circular dependency",
+    "expected": false
+  },
+  {
+    "name": "documentation",
+    "route": {
+      "file": "TEAM_NOTES.md",
+      "usage_context": "documentation",
+      "holds": "guide"
+    },
+    "prompt": "update documentation",
+    "expected": true
+  }
+]

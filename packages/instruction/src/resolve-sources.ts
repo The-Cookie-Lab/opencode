@@ -378,6 +378,7 @@ function pushSource(
 export function resolveRepositoryRoutes(
   cwd: string,
   taskDomains: readonly InstructionDomain[],
+  startingPoints: readonly string[] = [cwd],
 ): Pick<ResolveResult, "repoRoot" | "sources" | "meta"> {
   const repoRoot = gitRoot(canonicalPath(expandUser(cwd)))
   if (!repoRoot) return { repoRoot: null, sources: [], meta: [] }
@@ -385,10 +386,21 @@ export function resolveRepositoryRoutes(
   const meta: ResolvedSourceMeta[] = []
   const seen = new Set<string>()
   const order = { value: 0 }
-  for (const name of REPOSITORY_ROUTE_FILES) {
-    const filepath = path.join(repoRoot, name)
-    if (existsFile(filepath) && routeApplies({ file: name }, "", taskDomains)) {
-      pushSource(sources, meta, seen, filepath, "repo-local routed override file", order)
+  for (const agents of repoAgentsFromStartingPoints(repoRoot, [...startingPoints, cwd])) {
+    const agentsText = readText(agents)
+    if (agentsText === null) continue
+    const owner = path.dirname(agents)
+    for (const route of parseRouteTable(agentsText)) {
+      if (!routeApplies(route, "", taskDomains)) continue
+      const filepath = path.resolve(owner, route.file.trim())
+      if (!route.file.trim() || !/\.md$/i.test(route.file) || !contains(owner, filepath)) continue
+      if (existsFile(filepath)) pushSource(sources, meta, seen, filepath, "repo scoped routed policy", order)
+    }
+    for (const name of REPOSITORY_ROUTE_FILES) {
+      const filepath = path.join(owner, name)
+      if (routeApplies({ file: name }, "", taskDomains) && existsFile(filepath)) {
+        pushSource(sources, meta, seen, filepath, "repo scoped routed policy", order)
+      }
     }
   }
   return { repoRoot, sources, meta }
@@ -463,7 +475,7 @@ export function resolveSourcesDetailed(options: ResolveOptions): ResolveResult {
   const targetPaths = requestTargetPaths(options, cwd)
 
   const taskDomains = classifyTask(routeContext)
-  const repositoryRoutes = resolveRepositoryRoutes(cwd, taskDomains)
+  const repositoryRoutes = resolveRepositoryRoutes(cwd, taskDomains, targetPaths)
   const repo = repositoryRoutes.repoRoot
 
   const globalAgentsPath =

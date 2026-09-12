@@ -12,7 +12,14 @@ import {
 } from "../src/resolve-sources"
 import { profileHash, renderWithDelta, sourcesToSession } from "../src/session-profile"
 import { renderInstructionRequest } from "../src/index"
-
+const activationFixtures = JSON.parse(
+  fs.readFileSync(new URL("./route-activation-fixtures.json", import.meta.url), "utf8"),
+) as Array<{
+  name: string
+  route: { file: string; usage_context: string; holds: string }
+  prompt: string
+  expected: boolean
+}>
 describe("resolve-sources v2 routing", () => {
   test("parses always-loaded and route tables", () => {
     const agents = [
@@ -30,9 +37,10 @@ describe("resolve-sources v2 routing", () => {
     expect(routes.map((route) => route.file)).toEqual(["PULL_REQUESTS.md", "SDL_MCP.md"])
   })
 
-  test("routeApplies uses CI word boundaries", () => {
-    expect(routeApplies({ file: "PULL_REQUESTS.md" }, "run ci checks")).toBe(true)
-    expect(routeApplies({ file: "PULL_REQUESTS.md" }, "circular dependency")).toBe(false)
+  test("routeApplies follows the shared activation fixtures", () => {
+    for (const fixture of activationFixtures) {
+      expect(routeApplies(fixture.route, fixture.prompt), fixture.name).toBe(fixture.expected)
+    }
     expect(routeApplies({ file: "MACOS_CODEX_ENV.md" }, "configure launchctl")).toBe(true)
   })
   test("uses the shared classifier for unknown routes and rejects unsafe declarations", () => {
@@ -77,6 +85,49 @@ describe("resolve-sources v2 routing", () => {
         path.join(resolvedRepo, "AGENTS.md"),
         path.join(resolvedRepo, "nested", "AGENTS.md"),
         path.join(resolvedRepo, "GIT_WORKTREES.md"),
+      ])
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true })
+    }
+  })
+
+  test("loads nested AGENTS route declarations after their owner scope", () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "cat-nested-route-"))
+    try {
+      const codexHome = path.join(root, "codex")
+      const repo = path.join(root, "repo")
+      const nested = path.join(repo, "nested")
+      fs.mkdirSync(codexHome, { recursive: true })
+      fs.mkdirSync(nested, { recursive: true })
+      expect(spawnSync("git", ["init"], { cwd: repo, encoding: "utf-8" }).status).toBe(0)
+      const resolvedRepo = fs.realpathSync(repo)
+      fs.writeFileSync(path.join(codexHome, "AGENTS.md"), "global agents")
+      fs.writeFileSync(path.join(repo, "AGENTS.md"), "root agents")
+      fs.writeFileSync(
+        path.join(nested, "AGENTS.md"),
+        [
+          "nested agents",
+          "",
+          "## Context Routes",
+          "| File | Usage context | Holds |",
+          "| --- | --- | --- |",
+          "| `PULL_REQUESTS.md` | Pull request creation and review | nested PR policy |",
+        ].join("\n"),
+      )
+      fs.writeFileSync(path.join(nested, "PULL_REQUESTS.md"), "nested PR policy")
+
+      const result = resolveSourcesDetailed({
+        cwd: nested,
+        prompt: "open a pull request",
+        codexHome,
+        useCodexRouting: true,
+      })
+
+      expect(result.sources.map((source) => source.filepath)).toEqual([
+        path.join(codexHome, "AGENTS.md"),
+        path.join(resolvedRepo, "AGENTS.md"),
+        path.join(resolvedRepo, "nested", "AGENTS.md"),
+        path.join(resolvedRepo, "nested", "PULL_REQUESTS.md"),
       ])
     } finally {
       fs.rmSync(root, { recursive: true, force: true })
