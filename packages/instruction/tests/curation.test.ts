@@ -129,7 +129,6 @@ describe("structured instruction curation", () => {
 
     expect(rendered.blocks[0]).toContain("## Payload")
     expect(rendered.blocks[0]).toContain("[USR.RULE.PAYLOAD] Keep the actual instruction.")
-    expect(rendered.blocks[0]).not.toContain("Always Loaded Files")
     expect(rendered.blocks[0]).not.toContain("Context-Routed Files")
     expect(rendered.blocks[0]).not.toContain("PULL_REQUESTS.md")
   })

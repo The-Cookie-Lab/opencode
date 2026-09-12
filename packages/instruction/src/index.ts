@@ -10,7 +10,9 @@ export type { ResolveOptions, ResolveResult, ResolvedSourceMeta } from "./resolv
 export {
   parseAlwaysLoaded,
   parseRouteTable,
+  REPOSITORY_ROUTE_FILES,
   resolveDeclaredRoutePath,
+  resolveRepositoryRoutes,
   resolveSourcePaths,
   resolveSources,
   resolveSourcesDetailed,

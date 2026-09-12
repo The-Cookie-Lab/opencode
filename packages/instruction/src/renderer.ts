@@ -104,7 +104,12 @@ export function render(sources: Source[], options: RenderOptions): Rendered {
   const parsed = parse(sources)
   const reconciled = reconcile(parsed.entries)
   const routed = route(reconciled.entries, options.prompt, options.taskDomains)
-  const selected = selectedEntries(routed.selected, options.excludedHeadings ?? [])
+  const selected = selectedEntries(routed.selected, [
+    "Context Routes",
+    "Context-Routed Files",
+    "Root File Routing",
+    ...(options.excludedHeadings ?? []),
+  ])
   const excluded = routed.selected.filter((entry) => !selected.includes(entry))
   const omitted = [...routed.omitted, ...excluded]
   const lines = compactEntries(selected)

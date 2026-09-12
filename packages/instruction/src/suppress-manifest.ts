@@ -1,5 +1,6 @@
 import fs from "node:fs"
 import path from "node:path"
+import { parseRouteTable } from "./resolve-sources"
 
 export const MANAGED_CURSORIGNORE_MARKER = "cookielab-agent-toolkit-instructions"
 export const MANAGED_CURSORIGNORE_SYNC_VERSION = 1
@@ -18,8 +19,6 @@ export const STATIC_SUPPRESS_BASENAMES = [
   "MACOS_CODEX_ENV.md",
 ] as const
 
-const ROUTE_TABLE_RE = /^\|\s*`([^`]+)`\s*\|/
-
 function escapeRegex(value: string) {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
 }
@@ -34,17 +33,8 @@ function expandUser(value: string) {
 
 export function parseRoutedBasenamesFromAgents(content: string) {
   const basenames = new Set<string>()
-  let inRouteTable = false
-  for (const line of content.split(/\r?\n/)) {
-    if (line.includes("## Context-Routed Files")) {
-      inRouteTable = true
-      continue
-    }
-    if (inRouteTable && line.startsWith("## ")) break
-    if (!inRouteTable) continue
-    const match = line.match(ROUTE_TABLE_RE)
-    if (!match) continue
-    const basename = path.basename(match[1].trim())
+  for (const route of parseRouteTable(content)) {
+    const basename = path.basename(route.file.trim())
     if (basename.endsWith(".md")) basenames.add(basename)
   }
   return basenames

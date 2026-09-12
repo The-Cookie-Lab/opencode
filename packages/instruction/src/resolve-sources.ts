@@ -38,7 +38,7 @@ const DEFAULT_GLOBAL_AGENTS_PATHS = [
   path.join(process.env.HOME ?? "", ".config", "opencode", "AGENTS.md"),
 ]
 
-const ROUTE_HEADINGS = ["## Context-Routed Files", "## Root File Routing"] as const
+const ROUTE_HEADINGS = ["## Context Routes", "## Context-Routed Files", "## Root File Routing"] as const
 const ALWAYS_LOADED_HEADING = "## Always Loaded Files"
 const TABLE_SEPARATOR_RE = /^:?-{3,}:?$/
 const PATH_TOKEN_RE = /(?<path>(?:\.\.\/|\.\/|\/|[A-Za-z0-9_.-]+\/)[A-Za-z0-9_./@+=:-]+)/g
@@ -158,6 +158,13 @@ function columnIndex(headers: string[], ...names: string[]) {
   return null
 }
 
+function routeFileColumn(headers: string[]) {
+  const direct = columnIndex(headers, "file", "path", "file path", "owner")
+  if (direct !== null) return direct
+  const modern = headers.findIndex((header) => normalizeHeader(header).startsWith("owner under "))
+  return modern < 0 ? null : modern
+}
+
 export function parseRouteTable(agentsText: string): Array<{ file: string; usage_context: string; holds: string }> {
   let section: string | null = null
   for (const heading of ROUTE_HEADINGS) {
@@ -173,8 +180,8 @@ export function parseRouteTable(agentsText: string): Array<{ file: string; usage
   const headers = rows[0] ?? []
   const separator = rows[1] ?? []
   if (!separator.every((cell) => TABLE_SEPARATOR_RE.test(cell.trim()))) return []
-  const fileColumn = columnIndex(headers, "file", "path", "file path")
-  const contextColumn = columnIndex(headers, "usage context", "context")
+  const fileColumn = routeFileColumn(headers)
+  const contextColumn = columnIndex(headers, "usage context", "context", "load before")
   const holdsColumn = columnIndex(headers, "holds", "contains", "preferences")
   if (fileColumn === null || contextColumn === null) return []
   const routes: Array<{ file: string; usage_context: string; holds: string }> = []
@@ -208,6 +215,8 @@ const KNOWN_ROUTE_DOMAINS: Record<string, InstructionDomain> = {
   "PRD_DELIVERY.md": "prd",
   "MACOS_CODEX_ENV.md": "env",
 }
+
+export const REPOSITORY_ROUTE_FILES: readonly string[] = Object.keys(KNOWN_ROUTE_DOMAINS)
 
 export function resolveDeclaredRoutePath(codexHome: string, rawPath: string): string | null {
   const normalized = rawPath.trim().replaceAll("$CODEX_HOME", codexHome)
@@ -366,6 +375,24 @@ function pushSource(
   return true
 }
 
+export function resolveRepositoryRoutes(
+  cwd: string,
+  taskDomains: readonly InstructionDomain[],
+): Pick<ResolveResult, "repoRoot" | "sources" | "meta"> {
+  const repoRoot = gitRoot(canonicalPath(expandUser(cwd)))
+  if (!repoRoot) return { repoRoot: null, sources: [], meta: [] }
+  const sources: Source[] = []
+  const meta: ResolvedSourceMeta[] = []
+  const seen = new Set<string>()
+  const order = { value: 0 }
+  for (const name of REPOSITORY_ROUTE_FILES) {
+    const filepath = path.join(repoRoot, name)
+    if (existsFile(filepath) && routeApplies({ file: name }, "", taskDomains)) {
+      pushSource(sources, meta, seen, filepath, "repo-local routed override file", order)
+    }
+  }
+  return { repoRoot, sources, meta }
+}
 /** Legacy v1 path list: first global AGENTS + shallow→deep project AGENTS. */
 export function resolveSourcePaths(options: ResolveOptions) {
   const globalPaths = options.globalAgentsPaths?.length ? options.globalAgentsPaths : DEFAULT_GLOBAL_AGENTS_PATHS
@@ -428,7 +455,6 @@ export function resolveSourcesDetailed(options: ResolveOptions): ResolveResult {
   const codexHome = path.resolve(
     expandUser(options.codexHome || process.env.CODEX_HOME || path.join(process.env.HOME ?? "", ".codex")),
   )
-  const repo = gitRoot(cwd)
   const sources: Source[] = []
   const meta: ResolvedSourceMeta[] = []
   const omitted: string[] = []
@@ -437,6 +463,8 @@ export function resolveSourcesDetailed(options: ResolveOptions): ResolveResult {
   const targetPaths = requestTargetPaths(options, cwd)
 
   const taskDomains = classifyTask(routeContext)
+  const repositoryRoutes = resolveRepositoryRoutes(cwd, taskDomains)
+  const repo = repositoryRoutes.repoRoot
 
   const globalAgentsPath =
     firstExistingGlobalPath(options.globalAgentsPaths?.length ? options.globalAgentsPaths : [path.join(codexHome, "AGENTS.md")]) ??
@@ -469,13 +497,12 @@ export function resolveSourcesDetailed(options: ResolveOptions): ResolveResult {
     }
   }
 
-  if (repo) {
-    for (const name of Object.keys(KNOWN_ROUTE_DOMAINS)) {
-      const filepath = path.join(repo, name)
-      if (existsFile(filepath) && routeApplies({ file: name }, routeContext, taskDomains)) {
-        pushSource(sources, meta, seen, filepath, "repo-local routed override file", order)
-      }
-    }
+  for (const source of repositoryRoutes.sources) {
+    if (seen.has(source.filepath)) continue
+    seen.add(source.filepath)
+    sources.push({ ...source, order: order.value++ })
+    const sourceMeta = repositoryRoutes.meta.find((item) => item.filepath === source.filepath)
+    if (sourceMeta) meta.push(sourceMeta)
   }
 
   if (options.extraSources?.length) {
