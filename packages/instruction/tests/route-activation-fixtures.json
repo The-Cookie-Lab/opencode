@@ -120,6 +120,26 @@
     "expected": true
   },
   {
+    "name": "upstream_sync",
+    "route": {
+      "file": "GIT_WORKTREES.md",
+      "usage_context": "Upstream synchronization",
+      "holds": "worktree policy"
+    },
+    "prompt": "sync:upstream-dev",
+    "expected": true
+  },
+  {
+    "name": "upstream_sync_plain",
+    "route": {
+      "file": "GIT_WORKTREES.md",
+      "usage_context": "Upstream synchronization",
+      "holds": "worktree policy"
+    },
+    "prompt": "synchronize with upstream",
+    "expected": true
+  },
+  {
     "name": "implement_plan",
     "route": {
       "file": "PRD_DELIVERY.md",

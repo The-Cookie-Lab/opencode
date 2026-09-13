@@ -8,7 +8,7 @@ export interface Routed {
 
 const TASK_KEYWORDS: Array<[InstructionDomain, RegExp]> = [
   ["pr", /\b(pull request|pr\b|review|comment|merge|github comment|review thread|closeout|ci|checks|push|ship(?:ping)?|prd deliver|qa and ship|gh pr monitor)\b/i],
-  ["git", /\b(git|worktree|branch|commit|push|checkout|dirty|cleanup|default branch)\b/i],
+  ["git", /\b(git|worktree|branch|commit|push|checkout|dirty|cleanup|default branch|sync(?:hronise|hronize)?[:\s]+(?:\w+[:\s]+){0,3}upstream)\b/i],
   ["test", /\b(test|tests|unit|coverage|build|typecheck|lint|smoke|gate|verification|validation|verify|scenarios?)\b/i],
   ["prd", /\b(linear|prd|ticket|issue|implement (?:the )?plan)\b/i],
   ["env", /\b(mac ?os|shell|python|venv|launchctl|mcp|environment|npx)\b/i],

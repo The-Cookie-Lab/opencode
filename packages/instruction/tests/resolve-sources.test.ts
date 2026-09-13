@@ -7,6 +7,7 @@ import {
   parseAlwaysLoaded,
   parseRouteTable,
   resolveDeclaredRoutePath,
+  resolveRepositoryRoutes,
   resolveSourcesDetailed,
   routeApplies,
 } from "../src/resolve-sources"
@@ -58,7 +59,7 @@ describe("resolve-sources v2 routing", () => {
     expect(resolveDeclaredRoutePath("/tmp/codex", "notes.txt")).toBe(null)
   })
 
-  test("orders global sources, shallow repo instructions, then repo overrides", () => {
+  test("interleaves each owner scope with the routes it declares", () => {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), "cat-order-"))
     try {
       const codexHome = path.join(root, "codex")
@@ -83,9 +84,95 @@ describe("resolve-sources v2 routing", () => {
       expect(result.sources.map((source) => source.filepath)).toEqual([
         path.join(codexHome, "AGENTS.md"),
         path.join(resolvedRepo, "AGENTS.md"),
+        path.join(resolvedRepo, "GIT_WORKTREES.md"),
         path.join(resolvedRepo, "nested", "AGENTS.md"),
+      ])
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true })
+    }
+  })
+
+  test("keeps conventional route files a repository-root convention", () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "cat-nested-convention-"))
+    try {
+      const codexHome = path.join(root, "codex")
+      const repo = path.join(root, "repo")
+      const nested = path.join(repo, "nested")
+      fs.mkdirSync(codexHome, { recursive: true })
+      fs.mkdirSync(nested, { recursive: true })
+      expect(spawnSync("git", ["init"], { cwd: repo, encoding: "utf-8" }).status).toBe(0)
+      const resolvedRepo = fs.realpathSync(repo)
+      fs.writeFileSync(path.join(codexHome, "AGENTS.md"), "global agents")
+      fs.writeFileSync(path.join(repo, "AGENTS.md"), "root repo agents")
+      fs.writeFileSync(path.join(nested, "AGENTS.md"), "nested repo agents")
+      fs.writeFileSync(path.join(nested, "VERIFICATION.md"), "undeclared nested verification")
+
+      const undeclared = resolveSourcesDetailed({
+        cwd: nested,
+        prompt: "run validation",
+        codexHome,
+        useCodexRouting: true,
+      })
+      expect(undeclared.sources.map((source) => source.filepath)).toEqual([
+        path.join(codexHome, "AGENTS.md"),
+        path.join(resolvedRepo, "AGENTS.md"),
+        path.join(resolvedRepo, "nested", "AGENTS.md"),
+      ])
+
+      fs.writeFileSync(
+        path.join(nested, "AGENTS.md"),
+        [
+          "nested repo agents",
+          "",
+          "## Context Routes",
+          "| File | Usage context | Holds |",
+          "| --- | --- |",
+          "| `VERIFICATION.md` | validation | nested verification policy |",
+        ].join("\n"),
+      )
+      const declared = resolveSourcesDetailed({
+        cwd: nested,
+        prompt: "run validation",
+        codexHome,
+        useCodexRouting: true,
+      })
+      expect(declared.sources.map((source) => source.filepath)).toEqual([
+        path.join(codexHome, "AGENTS.md"),
+        path.join(resolvedRepo, "AGENTS.md"),
+        path.join(resolvedRepo, "nested", "AGENTS.md"),
+        path.join(resolvedRepo, "nested", "VERIFICATION.md"),
+      ])
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true })
+    }
+  })
+
+  test("resolves repository routes for symlinked working directories", () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "cat-symlinked-"))
+    try {
+      const repo = path.join(root, "repo")
+      const nested = path.join(repo, "nested")
+      const link = path.join(root, "link")
+      fs.mkdirSync(nested, { recursive: true })
+      expect(spawnSync("git", ["init"], { cwd: repo, encoding: "utf-8" }).status).toBe(0)
+      fs.writeFileSync(path.join(repo, "AGENTS.md"), "root repo agents")
+      fs.writeFileSync(path.join(repo, "GIT_WORKTREES.md"), "git override")
+      try {
+        fs.symlinkSync(repo, link, "dir")
+      } catch {
+        return // Symlinks unavailable (Windows without developer mode).
+      }
+      const resolvedRepo = fs.realpathSync(repo)
+      const symlinkedNested = path.join(link, "nested")
+
+      const result = resolveRepositoryRoutes(symlinkedNested, ["git"], [
+        path.join(symlinkedNested, "AGENTS.md"),
+      ])
+
+      expect(result.sources.map((source) => source.filepath)).toEqual([
         path.join(resolvedRepo, "GIT_WORKTREES.md"),
       ])
+      expect([...result.byOwner.keys()]).toEqual([resolvedRepo])
     } finally {
       fs.rmSync(root, { recursive: true, force: true })
     }
