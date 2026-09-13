@@ -147,6 +147,41 @@ describe("resolve-sources v2 routing", () => {
     }
   })
 
+  test("reports declared routes whether or not they activate", () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "cat-declared-"))
+    try {
+      const repo = path.join(root, "repo")
+      const nested = path.join(repo, "nested")
+      fs.mkdirSync(nested, { recursive: true })
+      expect(spawnSync("git", ["init"], { cwd: repo, encoding: "utf-8" }).status).toBe(0)
+      const resolvedRepo = fs.realpathSync(repo)
+      fs.writeFileSync(path.join(repo, "AGENTS.md"), "root agents")
+      fs.writeFileSync(path.join(repo, "GIT_WORKTREES.md"), "git policy")
+      fs.writeFileSync(path.join(nested, "PULL_REQUESTS.md"), "nested PR policy")
+      fs.writeFileSync(
+        path.join(nested, "AGENTS.md"),
+        [
+          "nested agents",
+          "",
+          "## Context Routes",
+          "| File | Usage context | Holds |",
+          "| --- | --- | --- |",
+          "| `PULL_REQUESTS.md` | Pull request creation and review | nested PR policy |",
+        ].join("\n"),
+      )
+
+      const routes = resolveRepositoryRoutes(nested, ["test"], [path.join(nested, "AGENTS.md")])
+
+      expect(routes.sources.map((source) => source.filepath)).toEqual([])
+      expect(routes.declaredByOwner.get(resolvedRepo)).toEqual([path.join(resolvedRepo, "GIT_WORKTREES.md")])
+      expect(routes.declaredByOwner.get(path.join(resolvedRepo, "nested"))).toEqual([
+        path.join(resolvedRepo, "nested", "PULL_REQUESTS.md"),
+      ])
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true })
+    }
+  })
+
   test("resolves repository routes for symlinked working directories", () => {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), "cat-symlinked-"))
     try {

@@ -388,6 +388,12 @@ export type RepositoryRouteGroups = {
   sources: Source[]
   meta: ResolvedSourceMeta[]
   byOwner: Map<string, Source[]>
+  /**
+   * Every route target each scope declares, activated or not. Callers holding
+   * native copies of these files must drop the ones this request does not
+   * activate instead of carrying them as ordinary context.
+   */
+  declaredByOwner: Map<string, string[]>
 }
 
 export function resolveRepositoryRoutes(
@@ -397,10 +403,17 @@ export function resolveRepositoryRoutes(
 ): RepositoryRouteGroups {
   const repoRoot = gitRoot(canonicalPath(expandUser(cwd)))
   if (!repoRoot) {
-    return { repoRoot: null, sources: [], meta: [], byOwner: new Map<string, Source[]>() }
+    return {
+      repoRoot: null,
+      sources: [],
+      meta: [],
+      byOwner: new Map<string, Source[]>(),
+      declaredByOwner: new Map<string, string[]>(),
+    }
   }
   const byOwner = new Map<string, Source[]>()
   const metaByOwner = new Map<string, ResolvedSourceMeta[]>()
+  const declaredByOwner = new Map<string, string[]>()
   const seen = new Set<string>()
   for (const agents of repoAgentsFromStartingPoints(repoRoot, [...startingPoints, cwd])) {
     const agentsText = readText(agents)
@@ -408,30 +421,39 @@ export function resolveRepositoryRoutes(
     const owner = path.dirname(agents)
     const ownerSources: Source[] = []
     const ownerMeta: ResolvedSourceMeta[] = []
+    const ownerDeclared: string[] = []
     const order = { value: 0 }
+    const recordDeclared = (filepath: string) => {
+      if (!ownerDeclared.includes(filepath)) ownerDeclared.push(filepath)
+    }
+    const appendRoute = (filepath: string) => {
+      pushSource(ownerSources, ownerMeta, seen, filepath, "repo scoped routed policy", order)
+    }
     for (const route of parseRouteTable(agentsText)) {
-      if (!routeApplies(route, "", taskDomains)) continue
       const filepath = path.resolve(owner, route.file.trim())
       if (!route.file.trim() || !/\.md$/i.test(route.file) || !contains(owner, filepath)) continue
-      if (existsFile(filepath)) pushSource(ownerSources, ownerMeta, seen, filepath, "repo scoped routed policy", order)
+      if (!existsFile(filepath)) continue
+      recordDeclared(filepath)
+      if (routeApplies(route, "", taskDomains)) appendRoute(filepath)
     }
     // Conventional repository route files stay a repository-root convention:
     // a nested owner must declare its own routes so its scope keeps precedence
     // over the shallower declarations it inherits.
-    if (path.resolve(owner) === path.resolve(repoRoot)) {
+    if (canonicalPath(owner) === canonicalPath(repoRoot)) {
       for (const name of REPOSITORY_ROUTE_FILES) {
         const filepath = path.join(owner, name)
-        if (routeApplies({ file: name }, "", taskDomains) && existsFile(filepath)) {
-          pushSource(ownerSources, ownerMeta, seen, filepath, "repo scoped routed policy", order)
-        }
+        if (!existsFile(filepath)) continue
+        recordDeclared(filepath)
+        if (routeApplies({ file: name }, "", taskDomains)) appendRoute(filepath)
       }
     }
     byOwner.set(path.resolve(owner), ownerSources)
     metaByOwner.set(path.resolve(owner), ownerMeta)
+    declaredByOwner.set(path.resolve(owner), ownerDeclared)
   }
   const sources = [...byOwner.values()].flat().map((source, index) => ({ ...source, order: index }))
   const meta = [...metaByOwner.values()].flat()
-  return { repoRoot, sources, meta, byOwner }
+  return { repoRoot, sources, meta, byOwner, declaredByOwner }
 }
 /** Legacy v1 path list: first global AGENTS + shallow→deep project AGENTS. */
 export function resolveSourcePaths(options: ResolveOptions) {
