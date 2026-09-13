@@ -140,6 +140,36 @@
     "expected": true
   },
   {
+    "name": "plural_pull_requests_basename",
+    "route": {
+      "file": "PULL_REQUESTS.md",
+      "usage_context": "Pull request creation and review",
+      "holds": "PR lifecycle"
+    },
+    "prompt": "PreToolUse PULL_REQUESTS.md",
+    "expected": true
+  },
+  {
+    "name": "pr_loads_validation",
+    "route": {
+      "file": "VERIFICATION.md",
+      "usage_context": "Validation gates",
+      "holds": "validation policy"
+    },
+    "prompt": "open a pull request",
+    "expected": true
+  },
+  {
+    "name": "upstream_synchronization",
+    "route": {
+      "file": "GIT_WORKTREES.md",
+      "usage_context": "Upstream synchronization",
+      "holds": "worktree policy"
+    },
+    "prompt": "perform upstream synchronization",
+    "expected": true
+  },
+  {
     "name": "implement_plan",
     "route": {
       "file": "PRD_DELIVERY.md",
