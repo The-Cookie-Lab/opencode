@@ -88,5 +88,95 @@
     },
     "prompt": "MACOS_CODEX_ENV.md",
     "expected": true
+  },
+  {
+    "name": "comment_reply",
+    "route": {
+      "file": "GITHUB_COMMENTS.md",
+      "usage_context": "GitHub comment reply",
+      "holds": "comment policy"
+    },
+    "prompt": "reply to this comment",
+    "expected": true
+  },
+  {
+    "name": "verify_output",
+    "route": {
+      "file": "VERIFICATION.md",
+      "usage_context": "verification",
+      "holds": "test policy"
+    },
+    "prompt": "verify the output",
+    "expected": true
+  },
+  {
+    "name": "cleanup_state",
+    "route": {
+      "file": "GIT_WORKTREES.md",
+      "usage_context": "git cleanup",
+      "holds": "worktree policy"
+    },
+    "prompt": "cleanup stale state",
+    "expected": true
+  },
+  {
+    "name": "upstream_sync",
+    "route": {
+      "file": "GIT_WORKTREES.md",
+      "usage_context": "Upstream synchronization",
+      "holds": "worktree policy"
+    },
+    "prompt": "sync:upstream-dev",
+    "expected": true
+  },
+  {
+    "name": "upstream_sync_plain",
+    "route": {
+      "file": "GIT_WORKTREES.md",
+      "usage_context": "Upstream synchronization",
+      "holds": "worktree policy"
+    },
+    "prompt": "synchronize with upstream",
+    "expected": true
+  },
+  {
+    "name": "plural_pull_requests_basename",
+    "route": {
+      "file": "PULL_REQUESTS.md",
+      "usage_context": "Pull request creation and review",
+      "holds": "PR lifecycle"
+    },
+    "prompt": "PreToolUse PULL_REQUESTS.md",
+    "expected": true
+  },
+  {
+    "name": "pr_loads_validation",
+    "route": {
+      "file": "VERIFICATION.md",
+      "usage_context": "Validation gates",
+      "holds": "validation policy"
+    },
+    "prompt": "open a pull request",
+    "expected": true
+  },
+  {
+    "name": "upstream_synchronization",
+    "route": {
+      "file": "GIT_WORKTREES.md",
+      "usage_context": "Upstream synchronization",
+      "holds": "worktree policy"
+    },
+    "prompt": "perform upstream synchronization",
+    "expected": true
+  },
+  {
+    "name": "implement_plan",
+    "route": {
+      "file": "PRD_DELIVERY.md",
+      "usage_context": "PRD delivery",
+      "holds": "delivery policy"
+    },
+    "prompt": "implement the plan",
+    "expected": true
   }
 ]
