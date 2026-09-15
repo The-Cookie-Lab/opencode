@@ -323,7 +323,7 @@ export const TuiThreadCommand = cmd({
         unguard?.()
       } catch {}
     }
-    process.exit(0)
+    process.exit()
   },
 })
 // scratch
