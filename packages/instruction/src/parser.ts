@@ -47,6 +47,8 @@ export type Directive = "extend" | "require" | "override"
 const DIRECTIVE_PATTERN =
   /^\s*(?:[-*+]\s+)?(?:\*\*|__)?(Extend|Require|Override)(?:\*\*|__)?\s+`?([A-Z][A-Z0-9]{1,12}(?:\.[A-Z][A-Z0-9_]{1,48}){1,4})\b/
 
+const LIST_ITEM_PATTERN = /^\s*(?:[-*+]|\d+[.)])\s+/
+
 const DOMAIN_KEYWORDS: Array<[InstructionDomain, RegExp]> = [
   ["pr", /\b(pull request|pr\b|review|merge|github comment|review-thread|bot-summary)\b/i],
   ["git", /\b(git|worktree|branch|commit|push|checkout|default branch|dirty worktree)\b/i],
@@ -140,24 +142,45 @@ export function parse(sources: Source[]): Parsed {
       paragraph = []
     }
 
+    // A structured list item owns its indented continuation lines (including
+    // blank-separated indented blocks), so a wrapped rule stays whole and a
+    // continuation line is never keyed by an ID it merely mentions. Nested list
+    // items that carry their own ID still start a new entry.
+    let item: { lines: string[]; id: string; directive?: Directive } | undefined
+    const flushItem = () => {
+      if (!item) return
+      push(item.lines.join("\n"), true, item.id, item.directive)
+      item = undefined
+    }
+    const continuesItem = (line: string) => {
+      if (line.trim() === "") return true
+      if (!/^\s+\S/.test(line)) return false
+      return !(LIST_ITEM_PATTERN.test(line) && ids(line).length > 0)
+    }
+
     for (const line of source.content.split(/\r?\n/)) {
       const headingMatch = line.match(/^(#{1,6})\s+(.+)$/)
       if (headingMatch) {
+        flushItem()
         flush()
         heading = cleanHeading(line)
         continue
       }
 
+      if (item && continuesItem(line)) {
+        item.lines.push(line)
+        continue
+      }
+      flushItem()
+
       const found = ids(line)
       if (found.length > 0) {
         flush()
         const directive = line.match(DIRECTIVE_PATTERN)
-        push(
-          line,
-          true,
-          directive?.[2] ?? found[0],
-          directive ? (directive[1].toLowerCase() as Directive) : undefined,
-        )
+        const id = directive?.[2] ?? found[0]
+        const kind = directive ? (directive[1].toLowerCase() as Directive) : undefined
+        if (LIST_ITEM_PATTERN.test(line)) item = { lines: [line], id, directive: kind }
+        else push(line, true, id, kind)
         continue
       }
 
@@ -167,6 +190,7 @@ export function parse(sources: Source[]): Parsed {
       }
       paragraph.push(line)
     }
+    flushItem()
     flush()
   }
 

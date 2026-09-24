@@ -73,6 +73,49 @@ describe("structured instruction curation", () => {
     expect(reconciled.entries.find((entry) => entry.text.includes("Repo push"))?.id).toBe("PR.RULE.PUSH")
   })
 
+  test("a wrapped rule bullet keeps its continuation lines and never re-keys them", () => {
+    const reconciled = reconcile(
+      parse([
+        {
+          filepath: "/home/.codex/PULL_REQUESTS.md",
+          order: 0,
+          content: "- `PR.TASK.DEFAULT_MERGE`: Global merge gate.",
+        },
+        {
+          filepath: "/repo/PULL_REQUESTS.md",
+          order: 1,
+          content: [
+            "- **Override** `PR.RULE.MERGE`: Merging this repo",
+            "  needs no separate request once `PR.TASK.DEFAULT_MERGE`",
+            "  gates pass.",
+            "",
+            "  ```bash",
+            "  ./check.sh",
+            "  ```",
+            "",
+            "Plain closing paragraph.",
+          ].join("\n"),
+        },
+      ]).entries,
+    )
+    const texts = reconciled.entries.map((entry) => entry.text)
+
+    expect(texts).toContain("- `PR.TASK.DEFAULT_MERGE`: Global merge gate.")
+    expect(texts).toContain(
+      [
+        "- **Override** `PR.RULE.MERGE`: Merging this repo",
+        "  needs no separate request once `PR.TASK.DEFAULT_MERGE`",
+        "  gates pass.",
+        "",
+        "  ```bash",
+        "  ./check.sh",
+        "  ```",
+      ].join("\n"),
+    )
+    expect(texts).toContain("Plain closing paragraph.")
+    expect(reconciled.entries).toHaveLength(3)
+  })
+
   test("renders curated compact blocks based on mode", () => {
     const sources = [
       {
