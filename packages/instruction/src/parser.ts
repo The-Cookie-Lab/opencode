@@ -28,6 +28,11 @@ export interface Entry {
   readonly domains: InstructionDomain[]
   readonly replacedBy?: string
   readonly structured: boolean
+  /**
+   * Set when the entry is an ID-targeted `Extend`/`Require`/`Override` directive.
+   * `id` is then the targeted rule ID: overrides replace it, extensions add to it.
+   */
+  readonly directive?: Directive
 }
 
 export interface Parsed {
@@ -36,6 +41,13 @@ export interface Parsed {
 
 const ID_PATTERN = /\b([A-Z][A-Z0-9]{1,12}(?:\.[A-Z][A-Z0-9_]{1,48}){1,4})\b/g
 const REPLACED_BY_PATTERN = /\breplaced_by=([A-Z][A-Z0-9]{1,12}(?:\.[A-Z][A-Z0-9_]{1,48}){1,4})\b/
+
+export type Directive = "extend" | "require" | "override"
+
+const DIRECTIVE_PATTERN =
+  /^\s*(?:[-*+]\s+)?(?:\*\*|__)?(Extend|Require|Override)(?:\*\*|__)?\s+`?([A-Z][A-Z0-9]{1,12}(?:\.[A-Z][A-Z0-9_]{1,48}){1,4})\b/
+
+const LIST_ITEM_PATTERN = /^\s*(?:[-*+]|\d+[.)])\s+/
 
 const DOMAIN_KEYWORDS: Array<[InstructionDomain, RegExp]> = [
   ["pr", /\b(pull request|pr\b|review|merge|github comment|review-thread|bot-summary)\b/i],
@@ -105,7 +117,7 @@ export function parse(sources: Source[]): Parsed {
     let heading: string | undefined
     let paragraph: string[] = []
 
-    const push = (text: string, structured: boolean, id?: string) => {
+    const push = (text: string, structured: boolean, id?: string, directive?: Directive) => {
       const cleaned = cleanText(text)
       if (!cleaned) return
       const replacedBy = cleaned.match(REPLACED_BY_PATTERN)?.[1]
@@ -119,6 +131,7 @@ export function parse(sources: Source[]): Parsed {
         text: cleaned,
         domains: inferDomains({ id, heading, text: cleaned, structured }),
         replacedBy,
+        directive,
         structured,
       })
     }
@@ -129,18 +142,45 @@ export function parse(sources: Source[]): Parsed {
       paragraph = []
     }
 
+    // A structured list item owns its indented continuation lines (including
+    // blank-separated indented blocks), so a wrapped rule stays whole and a
+    // continuation line is never keyed by an ID it merely mentions. Nested list
+    // items that carry their own ID still start a new entry.
+    let item: { lines: string[]; id: string; directive?: Directive } | undefined
+    const flushItem = () => {
+      if (!item) return
+      push(item.lines.join("\n"), true, item.id, item.directive)
+      item = undefined
+    }
+    const continuesItem = (line: string) => {
+      if (line.trim() === "") return true
+      if (!/^\s+\S/.test(line)) return false
+      return !(LIST_ITEM_PATTERN.test(line) && ids(line).length > 0)
+    }
+
     for (const line of source.content.split(/\r?\n/)) {
       const headingMatch = line.match(/^(#{1,6})\s+(.+)$/)
       if (headingMatch) {
+        flushItem()
         flush()
         heading = cleanHeading(line)
         continue
       }
 
+      if (item && continuesItem(line)) {
+        item.lines.push(line)
+        continue
+      }
+      flushItem()
+
       const found = ids(line)
       if (found.length > 0) {
         flush()
-        push(line, true, found[0])
+        const directive = line.match(DIRECTIVE_PATTERN)
+        const id = directive?.[2] ?? found[0]
+        const kind = directive ? (directive[1].toLowerCase() as Directive) : undefined
+        if (LIST_ITEM_PATTERN.test(line)) item = { lines: [line], id, directive: kind }
+        else push(line, true, id, kind)
         continue
       }
 
@@ -150,6 +190,7 @@ export function parse(sources: Source[]): Parsed {
       }
       paragraph.push(line)
     }
+    flushItem()
     flush()
   }
 

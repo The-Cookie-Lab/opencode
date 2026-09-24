@@ -8,12 +8,13 @@ export interface Result {
 
 export function reconcile(entries: Entry[]): Result {
   const structured = new Map<string, Entry>()
-  const unstructured: Entry[] = []
+  const unkeyed: Entry[] = []
   let sameIdOverrides = 0
 
   for (const entry of entries) {
-    if (!entry.id) {
-      unstructured.push(entry)
+    // Unstructured text and Extend/Require directives add to, never replace, a same-ID rule.
+    if (!entry.id || entry.directive === "extend" || entry.directive === "require") {
+      unkeyed.push(entry)
       continue
     }
     if (structured.has(entry.id)) sameIdOverrides++
@@ -29,7 +30,7 @@ export function reconcile(entries: Entry[]): Result {
   }
 
   return {
-    entries: [...unstructured, ...structured.values()].sort(
+    entries: [...unkeyed, ...structured.values()].sort(
       (a, b) => a.sourceOrder - b.sourceOrder || a.ordinal - b.ordinal,
     ),
     sameIdOverrides,

@@ -8,6 +8,15 @@ Shared agent instruction curation for CookieLab clients.
 - `cli/instruction-cli.ts` — JSON CLI used by thin client hook adapters
 - `tests/` — unit tests
 
+## Rule-ID reconciliation
+
+Curated mode keys structured lines by their first rule ID. Across sources, later
+files win:
+
+- A plain `ID` line or an `Override ID` directive replaces the earlier rule with that ID.
+- An `Extend ID` or `Require ID` directive is kept together with the rule it targets.
+- `replaced_by=NEW` drops the old ID when `NEW` is present.
+
 ## CLI
 
 ```sh
