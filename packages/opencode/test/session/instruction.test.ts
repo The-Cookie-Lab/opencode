@@ -171,9 +171,10 @@ describe("structured instruction curation", () => {
     expect(
       InstructionRouter.route(reconciled.entries, "add unit test coverage").selected.map((entry) => entry.id),
     ).toEqual(["VER.RULE.TESTS", "GIT.RULE.WORKTREE"])
+    // PR work carries its validation rules (canonical router: pr implies test).
     expect(
       InstructionRouter.route(reconciled.entries, "prepare a PR review closeout").selected.map((entry) => entry.id),
-    ).toEqual(["PR.RULE.REVIEW"])
+    ).toEqual(["VER.RULE.TESTS", "PR.RULE.REVIEW"])
     expect(
       InstructionRouter.route(reconciled.entries, "create a git worktree branch").selected.map((entry) => entry.id),
     ).toEqual(["GIT.RULE.WORKTREE"])
