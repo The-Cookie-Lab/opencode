@@ -38,6 +38,41 @@ describe("structured instruction curation", () => {
     expect(reconciled.replacementSuppressions).toBe(1)
   })
 
+  test("Extend and Require directives add to the targeted rule; Override replaces it", () => {
+    const reconciled = reconcile(
+      parse([
+        {
+          filepath: "/home/.codex/PULL_REQUESTS.md",
+          order: 0,
+          content: [
+            "- `PR.RULE.MUTATION`: Global mutation rule.",
+            "- `PR.RULE.PUSH`: Global push rule.",
+            "- `PR.RULE.MERGE`: Global merge rule.",
+          ].join("\n"),
+        },
+        {
+          filepath: "/repo/PULL_REQUESTS.md",
+          order: 1,
+          content: [
+            "- **Extend** `PR.RULE.MUTATION`: Repo mutation delta.",
+            "- Require `PR.RULE.PUSH`: Repo push requirement.",
+            "- **Override** `PR.RULE.MERGE`: Repo merge policy.",
+          ].join("\n"),
+        },
+      ]).entries,
+    )
+    const texts = reconciled.entries.map((entry) => entry.text)
+
+    expect(texts).toContain("- `PR.RULE.MUTATION`: Global mutation rule.")
+    expect(texts).toContain("- **Extend** `PR.RULE.MUTATION`: Repo mutation delta.")
+    expect(texts).toContain("- `PR.RULE.PUSH`: Global push rule.")
+    expect(texts).toContain("- Require `PR.RULE.PUSH`: Repo push requirement.")
+    expect(texts).not.toContain("- `PR.RULE.MERGE`: Global merge rule.")
+    expect(texts).toContain("- **Override** `PR.RULE.MERGE`: Repo merge policy.")
+    expect(reconciled.sameIdOverrides).toBe(1)
+    expect(reconciled.entries.find((entry) => entry.text.includes("Repo push"))?.id).toBe("PR.RULE.PUSH")
+  })
+
   test("renders curated compact blocks based on mode", () => {
     const sources = [
       {
